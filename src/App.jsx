@@ -4,7 +4,7 @@ import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, 
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -268,13 +268,14 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - 支援編輯與刪除 + 生涯天數設定 + Google 綁定與登入 (Redirect 版)
+// 新增：個人頁面 (ProfileScreen) - 支援編輯與刪除 + 生涯天數設定 + Google 綁定與登入 (Redirect 版 + Loading 狀態)
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
     const [bodyFat, setBodyFat] = useState('');
     const today = new Date().toISOString().substring(0, 10);
     const [date, setDate] = useState(today);
+    const [isLoading, setIsLoading] = useState(false); // 新增 Loading 狀態
 
     // 新增：生涯設定
     const [startDate, setStartDate] = useState('');
@@ -292,13 +293,14 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
 
     // Google 綁定邏輯 (使用 Redirect 改善手機體驗)
     const handleLinkGoogle = async () => {
+        setIsLoading(true); // 開始轉圈圈
         const provider = new GoogleAuthProvider();
         try {
             await linkWithRedirect(auth.currentUser, provider);
-            // 重新導向後，頁面會重整，結果由 App 層級的 getRedirectResult 處理
+            // 成功的話畫面會跳轉，這裡的程式碼不會執行
         } catch (error) {
+            setIsLoading(false); // 失敗才停止轉圈圈
             console.error("Link redirect error (pre-check):", error);
-            // 改良後的錯誤提示
             if (error.code === 'auth/provider-already-linked') {
                  alert("此帳號已經綁定過 Google 了。");
             } else if (error.code === 'auth/operation-not-allowed') {
@@ -311,11 +313,12 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
 
     // Google 登入邏輯 (使用 Redirect 改善手機體驗)
     const handleLoginGoogle = async () => {
+        setIsLoading(true);
         const provider = new GoogleAuthProvider();
         try {
             await signInWithRedirect(auth, provider);
-            // 重新導向後，頁面會重整
         } catch (error) {
+            setIsLoading(false);
             console.error("Login redirect error (pre-check):", error);
             alert(`登入啟動失敗：${error.message}`);
         }
@@ -420,14 +423,14 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                             目前為訪客模式，在手機 App 版中會視為新使用者。
                         </p>
                         <div className="grid grid-cols-1 gap-2">
-                            <button onClick={handleLinkGoogle} className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors">
-                                <ShieldCheck className="w-4 h-4 mr-2" />
-                                綁定目前資料到 Google (建立備份)
+                            <button onClick={handleLinkGoogle} disabled={isLoading} className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors disabled:opacity-50">
+                                {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <ShieldCheck className="w-4 h-4 mr-2" />}
+                                {isLoading ? '轉跳中...' : '綁定目前資料到 Google (建立備份)'}
                             </button>
                             <div className="text-center text-xs text-gray-400 font-bold my-1">- 或 -</div>
-                            <button onClick={handleLoginGoogle} className="w-full bg-indigo-600 text-white font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-indigo-700 transition-colors">
-                                <LogIn className="w-4 h-4 mr-2" />
-                                切換至現有 Google 帳號 (找回舊資料)
+                            <button onClick={handleLoginGoogle} disabled={isLoading} className="w-full bg-indigo-600 text-white font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-indigo-700 transition-colors disabled:opacity-50">
+                                {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <LogIn className="w-4 h-4 mr-2" />}
+                                {isLoading ? '轉跳中...' : '切換至現有 Google 帳號 (找回舊資料)'}
                             </button>
                         </div>
                     </div>
