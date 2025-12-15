@@ -298,7 +298,14 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             // 重新導向後，頁面會重整，結果由 App 層級的 getRedirectResult 處理
         } catch (error) {
             console.error("Link redirect error (pre-check):", error);
-            alert(`綁定啟動失敗：${error.message}`);
+            // 改良後的錯誤提示
+            if (error.code === 'auth/provider-already-linked') {
+                 alert("此帳號已經綁定過 Google 了。");
+            } else if (error.code === 'auth/operation-not-allowed') {
+                 alert("綁定失敗：請確認 Firebase Console > Authentication > Sign-in method 已啟用 Google。");
+            } else {
+                 alert(`綁定啟動失敗：${error.message}\n(如果是在手機 App 失敗，請確認 Firebase 授權網域設定)`);
+            }
         }
     };
 
@@ -675,6 +682,10 @@ const App = () => {
                 console.error("Redirect sign-in error:", error);
                 if (error.code === 'auth/credential-already-in-use') {
                     alert("此 Google 帳號已有其他紀錄，無法合併。");
+                } else if (error.code === 'auth/operation-not-allowed') {
+                    alert("登入失敗：請確認 Firebase Console > Authentication > Sign-in method 已啟用 Google。");
+                } else if (error.code === 'auth/unauthorized-domain') {
+                    alert(`網域未授權！\n請至 Firebase Console -> Authentication -> Settings -> Authorized domains\n新增您的網址：${window.location.hostname}`);
                 } else if (error.code !== 'auth/popup-closed-by-user') {
                     alert(`登入發生錯誤：${error.message}`);
                 }
