@@ -142,7 +142,7 @@ const RpeSelectorAlwaysVisible = ({ value, onChange }) => {
     );
 };
 
-// 6. 動作編輯器 (修改版 - 移除內建建議，加入 AI Prompt 複製功能)
+// 6. 動作編輯器 (AI Prompt 複製功能)
 const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
     const types = ['推', '拉', '腿', '核心'];
     const bodyParts = ['胸', '背', '腿', '肩', '核心', '手臂', '全身']; 
@@ -268,14 +268,14 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - 支援編輯與刪除 + 生涯天數設定 + Google 綁定與登入 (Redirect 版 + Loading 狀態)
+// 新增：個人頁面 (ProfileScreen) - 支援編輯與刪除 + 生涯天數設定 + Google 綁定與登入 (Redirect 版 + 詳細錯誤碼)
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
     const [bodyFat, setBodyFat] = useState('');
     const today = new Date().toISOString().substring(0, 10);
     const [date, setDate] = useState(today);
-    const [isLoading, setIsLoading] = useState(false); // 新增 Loading 狀態
+    const [isLoading, setIsLoading] = useState(false); 
 
     // 新增：生涯設定
     const [startDate, setStartDate] = useState('');
@@ -293,20 +293,20 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
 
     // Google 綁定邏輯 (使用 Redirect 改善手機體驗)
     const handleLinkGoogle = async () => {
-        setIsLoading(true); // 開始轉圈圈
+        setIsLoading(true); 
         const provider = new GoogleAuthProvider();
         try {
             await linkWithRedirect(auth.currentUser, provider);
-            // 成功的話畫面會跳轉，這裡的程式碼不會執行
         } catch (error) {
-            setIsLoading(false); // 失敗才停止轉圈圈
-            console.error("Link redirect error (pre-check):", error);
+            setIsLoading(false); 
+            console.error("Link redirect error:", error);
+            // 這裡的 alert 包含 Error Code，方便您確認是否為最新版程式碼
             if (error.code === 'auth/provider-already-linked') {
                  alert("此帳號已經綁定過 Google 了。");
             } else if (error.code === 'auth/operation-not-allowed') {
-                 alert("綁定失敗：請確認 Firebase Console > Authentication > Sign-in method 已啟用 Google。");
+                 alert(`[${error.code}] 綁定失敗：請確認 Firebase Console 已啟用 Google 登入。`);
             } else {
-                 alert(`綁定啟動失敗：${error.message}\n(如果是在手機 App 失敗，請確認 Firebase 授權網域設定)`);
+                 alert(`[${error.code}] 綁定啟動失敗：${error.message}\n如果是手機 App，請確認網域授權。`);
             }
         }
     };
@@ -319,8 +319,8 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             await signInWithRedirect(auth, provider);
         } catch (error) {
             setIsLoading(false);
-            console.error("Login redirect error (pre-check):", error);
-            alert(`登入啟動失敗：${error.message}`);
+            console.error("Login redirect error:", error);
+            alert(`[${error.code}] 登入啟動失敗：${error.message}`);
         }
     };
 
@@ -328,7 +328,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const handleLogout = async () => {
         if (confirm("確定要登出嗎？如果是訪客帳號且未綁定，資料將會遺失。")) {
             await signOut(auth);
-            await signInAnonymously(auth); // 登出後馬上給一個新的匿名身分，保持 App 可用
+            await signInAnonymously(auth); 
         }
     };
 
@@ -348,7 +348,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
 
     // 計算總天數
     const totalTrainingDays = useMemo(() => {
-        // 從 logDB 中找出不重複的日期數量
         const uniqueDates = new Set(logDB.map(log => new Date(log.date).toDateString()));
         return Number(baseTrainingDays) + uniqueDates.size;
     }, [logDB, baseTrainingDays]);
@@ -489,7 +488,10 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             
             {/* 歷史列表 */}
             <div className="bg-white p-4 rounded-xl shadow-lg">
-                <h3 className="text-lg font-bold text-gray-800 mb-3 border-b pb-2">歷史紀錄</h3>
+                <div className="flex justify-between items-center mb-3 border-b pb-2">
+                    <h3 className="text-lg font-bold text-gray-800">歷史紀錄</h3>
+                    <span className="text-xs text-gray-400">App 版本：v2.1 (Redirect Mode)</span>
+                </div>
                 {sortedMetrics.length === 0 ? <p className="text-center text-gray-500">無數據</p> : (
                     <table className="min-w-full text-sm"><thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left">日期</th><th>體重</th><th>體脂</th><th className="text-right">操作</th></tr></thead>
                     <tbody>{sortedMetrics.map(m => (<tr key={m.date} className="border-b hover:bg-gray-50"><td className="px-4 py-3 font-medium text-gray-900">{m.date}</td><td className="text-center">{m.weight}</td><td className="text-center">{m.bodyFat||'-'}</td><td className="text-right"><button onClick={() => handleEdit(m)} className="text-indigo-500 mr-3"><PenSquare className="w-4 h-4"/></button><button onClick={() => handleDelete(m.date)} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4"/></button></td></tr>))}</tbody></table>
@@ -686,11 +688,11 @@ const App = () => {
                 if (error.code === 'auth/credential-already-in-use') {
                     alert("此 Google 帳號已有其他紀錄，無法合併。");
                 } else if (error.code === 'auth/operation-not-allowed') {
-                    alert("登入失敗：請確認 Firebase Console > Authentication > Sign-in method 已啟用 Google。");
+                    alert(`[${error.code}] 登入失敗：請確認 Firebase Console 已啟用 Google 登入。`);
                 } else if (error.code === 'auth/unauthorized-domain') {
-                    alert(`網域未授權！\n請至 Firebase Console -> Authentication -> Settings -> Authorized domains\n新增您的網址：${window.location.hostname}`);
+                    alert(`[${error.code}] 網域未授權！\n請至 Firebase Console -> Authentication -> Settings -> Authorized domains\n新增您的網址：${window.location.hostname}`);
                 } else if (error.code !== 'auth/popup-closed-by-user') {
-                    alert(`登入發生錯誤：${error.message}`);
+                    alert(`[${error.code}] 登入發生錯誤：${error.message}`);
                 }
             }
 
