@@ -490,7 +490,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             <div className="bg-white p-4 rounded-xl shadow-lg">
                 <div className="flex justify-between items-center mb-3 border-b pb-2">
                     <h3 className="text-lg font-bold text-gray-800">歷史紀錄</h3>
-                    <span className="text-xs text-gray-400">App 版本：v2.1 (Redirect Mode)</span>
+                    <span className="text-xs text-gray-400">App 版本：v2.2 (Redirect Mode)</span>
                 </div>
                 {sortedMetrics.length === 0 ? <p className="text-center text-gray-500">無數據</p> : (
                     <table className="min-w-full text-sm"><thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left">日期</th><th>體重</th><th>體脂</th><th className="text-right">操作</th></tr></thead>
