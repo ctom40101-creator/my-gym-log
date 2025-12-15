@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, linkWithPopup } from 'firebase/auth';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, linkWithRedirect, signInWithRedirect, signOut, getRedirectResult } from 'firebase/auth';
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -268,7 +268,7 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - 支援編輯與刪除 + 生涯天數設定 + Google 綁定
+// 新增：個人頁面 (ProfileScreen) - 支援編輯與刪除 + 生涯天數設定 + Google 綁定與登入 (Redirect 版)
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
@@ -290,19 +290,35 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     }, [auth]);
 
-    // Google 綁定邏輯
+    // Google 綁定邏輯 (使用 Redirect 改善手機體驗)
     const handleLinkGoogle = async () => {
         const provider = new GoogleAuthProvider();
         try {
-            await linkWithPopup(auth.currentUser, provider);
-            alert("綁定成功！您的資料現在已安全連結至 Google 帳號，不用擔心遺失了。");
+            await linkWithRedirect(auth.currentUser, provider);
+            // 重新導向後，頁面會重整，結果由 App 層級的 getRedirectResult 處理
         } catch (error) {
-            console.error(error);
-            if (error.code === 'auth/credential-already-in-use') {
-                alert("此 Google 帳號已有其他紀錄。無法合併，請聯絡管理員或使用不同帳號。");
-            } else {
-                alert("綁定失敗，請確認您已在 Firebase Console 開啟 Google 登入功能。");
-            }
+            console.error("Link redirect error (pre-check):", error);
+            alert(`綁定啟動失敗：${error.message}`);
+        }
+    };
+
+    // Google 登入邏輯 (使用 Redirect 改善手機體驗)
+    const handleLoginGoogle = async () => {
+        const provider = new GoogleAuthProvider();
+        try {
+            await signInWithRedirect(auth, provider);
+            // 重新導向後，頁面會重整
+        } catch (error) {
+            console.error("Login redirect error (pre-check):", error);
+            alert(`登入啟動失敗：${error.message}`);
+        }
+    };
+
+    // 登出
+    const handleLogout = async () => {
+        if (confirm("確定要登出嗎？如果是訪客帳號且未綁定，資料將會遺失。")) {
+            await signOut(auth);
+            await signInAnonymously(auth); // 登出後馬上給一個新的匿名身分，保持 App 可用
         }
     };
 
@@ -389,22 +405,33 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             <div className={`p-6 rounded-xl shadow-lg border ${user?.isAnonymous ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
                 <h3 className="text-xl font-bold text-gray-800 mb-2 flex items-center">
                     {user?.isAnonymous ? <ShieldCheck className="w-5 h-5 mr-2 text-orange-500" /> : <ShieldCheck className="w-5 h-5 mr-2 text-green-600" />}
-                    帳號狀態：{user?.isAnonymous ? '訪客 (未備份)' : '已綁定 Google'}
+                    帳號狀態：{user?.isAnonymous ? '訪客 (未備份)' : '已登入'}
                 </h3>
                 {user?.isAnonymous ? (
-                    <div>
-                        <p className="text-sm text-gray-600 mb-4">
-                            目前為訪客模式，清除瀏覽器快取將會導致資料遺失。
-                            <br/><strong>強烈建議您綁定 Google 帳號以永久保存紀錄。</strong>
+                    <div className="space-y-3">
+                        <p className="text-sm text-gray-600">
+                            目前為訪客模式，在手機 App 版中會視為新使用者。
                         </p>
-                        <button onClick={handleLinkGoogle} className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors">
-                            <LogIn className="w-4 h-4 mr-2" />
-                            綁定 Google 帳號
-                        </button>
+                        <div className="grid grid-cols-1 gap-2">
+                            <button onClick={handleLinkGoogle} className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors">
+                                <ShieldCheck className="w-4 h-4 mr-2" />
+                                綁定目前資料到 Google (建立備份)
+                            </button>
+                            <div className="text-center text-xs text-gray-400 font-bold my-1">- 或 -</div>
+                            <button onClick={handleLoginGoogle} className="w-full bg-indigo-600 text-white font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-indigo-700 transition-colors">
+                                <LogIn className="w-4 h-4 mr-2" />
+                                切換至現有 Google 帳號 (找回舊資料)
+                            </button>
+                        </div>
                     </div>
                 ) : (
-                    <div className="text-sm text-green-700 font-medium flex items-center">
-                        <CheckCircle className="w-4 h-4 mr-2"/> 您的紀錄已安全連結至：{user?.email}
+                    <div>
+                        <div className="text-sm text-green-700 font-medium flex items-center mb-4">
+                            <CheckCircle className="w-4 h-4 mr-2"/> 已連結：{user?.email}
+                        </div>
+                        <button onClick={handleLogout} className="w-full bg-gray-200 text-gray-700 font-bold py-2 rounded-lg flex items-center justify-center hover:bg-gray-300">
+                            <LogOut className="w-4 h-4 mr-2" /> 登出
+                        </button>
                     </div>
                 )}
             </div>
@@ -637,8 +664,25 @@ const App = () => {
     useEffect(() => {
         if (!auth) return;
         const init = async () => {
+            // 嘗試取得重定向結果 (處理 Redirect 登入後的回調)
+            try {
+                const result = await getRedirectResult(auth);
+                if (result) {
+                    console.log("Redirect sign-in success:", result.user.email);
+                    // 這裡可以加入成功提示，但通常 onAuthStateChanged 會自動更新 UI
+                }
+            } catch (error) {
+                console.error("Redirect sign-in error:", error);
+                if (error.code === 'auth/credential-already-in-use') {
+                    alert("此 Google 帳號已有其他紀錄，無法合併。");
+                } else if (error.code !== 'auth/popup-closed-by-user') {
+                    alert(`登入發生錯誤：${error.message}`);
+                }
+            }
+
             if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
-            else await signInAnonymously(auth);
+            else if (!auth.currentUser) await signInAnonymously(auth); // 只有當沒有使用者時才匿名登入
+            
             setUserId(auth.currentUser?.uid);
             setIsAuthReady(true);
         };
