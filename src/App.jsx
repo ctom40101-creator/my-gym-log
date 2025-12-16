@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, linkWithRedirect, signInWithRedirect, signOut, getRedirectResult, linkWithPopup, signInWithPopup } from 'firebase/auth';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, linkWithRedirect, signInWithRedirect, signOut, getRedirectResult, linkWithPopup, signInWithPopup, EmailAuthProvider, linkWithCredential, signInWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -268,7 +268,7 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - v2.4 PWA 優化版 (Popup First)
+// 新增：個人頁面 (ProfileScreen) - v2.5 信箱登入版 (最穩定)
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
@@ -278,6 +278,11 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [isLoading, setIsLoading] = useState(false); 
     const [debugMsg, setDebugMsg] = useState('');
 
+    // 信箱登入相關 state
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [isEmailMode, setIsEmailMode] = useState(false);
+
     // 新增：生涯設定
     const [startDate, setStartDate] = useState('');
     const [baseTrainingDays, setBaseTrainingDays] = useState(0);
@@ -285,7 +290,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     // 新增：使用者狀態
     const [user, setUser] = useState(auth?.currentUser);
 
-    // 偵測是否為 App 模式 (PWA Standalone)
     const isPWA = useMemo(() => {
         return (window.matchMedia('(display-mode: standalone)').matches) || (window.navigator.standalone) || document.referrer.includes('android-app://');
     }, []);
@@ -297,40 +301,27 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     }, [auth]);
 
-    // 通用錯誤處理
     const handleError = (error, action) => {
         setIsLoading(false);
         console.error(`${action} error:`, error);
-        setDebugMsg(`[${action} Error]\nCode: ${error.code}\nMsg: ${error.message}`);
-        
-        if (error.code === 'auth/provider-already-linked') {
-             alert("此帳號已經綁定過 Google 了。");
-        } else if (error.code === 'auth/operation-not-allowed') {
-             alert(`[${error.code}] 功能未開啟：請確認 Firebase Console > Authentication > Sign-in method 已啟用 Google。`);
-        } else if (error.code === 'auth/unauthorized-domain') {
-             alert(`[${error.code}] 網域未授權：請至 Firebase Console 新增 ${window.location.hostname}`);
-        } else if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
-             alert(`[${error.code}] 登入視窗已關閉或被阻擋。請重試。`);
-        } else {
-             alert(`[${error.code}] 失敗：${error.message}`);
-        }
+        setDebugMsg(`[${action} Error] ${error.code}: ${error.message}`);
+        alert(`${action} 失敗：${error.message}`);
     };
 
-    // 統一入口：綁定 Google (預設 Popup)
+    // Google 綁定 (Popup)
     const handleLinkGoogle = async () => {
         setIsLoading(true); setDebugMsg('');
         const provider = new GoogleAuthProvider();
         try {
-            // 在 PWA/Mobile 上，Popup 體驗通常比 Redirect 好 (不會跳出 App)
             await linkWithPopup(auth.currentUser, provider);
             setIsLoading(false);
-            alert("綁定成功！資料已安全連結至 Google 帳號。");
+            alert("綁定成功！");
         } catch (error) {
-            handleError(error, 'LinkPopup');
+            handleError(error, 'Google Link');
         }
     };
 
-    // 統一入口：登入 Google (預設 Popup)
+    // Google 登入 (Popup)
     const handleLoginGoogle = async () => {
         setIsLoading(true); setDebugMsg('');
         const provider = new GoogleAuthProvider();
@@ -338,13 +329,41 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             await signInWithPopup(auth, provider);
             setIsLoading(false);
         } catch (error) {
-            handleError(error, 'LoginPopup');
+            handleError(error, 'Google Login');
+        }
+    };
+
+    // 信箱綁定 (設定密碼)
+    const handleLinkEmail = async () => {
+        if(!email || !password) return alert("請輸入 Email 和密碼");
+        setIsLoading(true); setDebugMsg('');
+        try {
+            const credential = EmailAuthProvider.credential(email, password);
+            await linkWithCredential(auth.currentUser, credential);
+            setIsLoading(false);
+            alert("設定成功！以後可以用這組信箱密碼登入 App。");
+            setIsEmailMode(false);
+        } catch (error) {
+            handleError(error, 'Email Link');
+        }
+    };
+
+    // 信箱登入
+    const handleLoginEmail = async () => {
+        if(!email || !password) return alert("請輸入 Email 和密碼");
+        setIsLoading(true); setDebugMsg('');
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+            setIsLoading(false);
+            // 登入成功
+        } catch (error) {
+            handleError(error, 'Email Login');
         }
     };
 
     // 登出
     const handleLogout = async () => {
-        if (confirm("確定要登出嗎？如果是訪客帳號且未綁定，資料將會遺失。")) {
+        if (confirm("確定要登出嗎？")) {
             await signOut(auth);
             await signInAnonymously(auth); 
         }
@@ -428,51 +447,83 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     return (
         <div className="space-y-6">
             
-            {/* 新增：帳號安全卡片 (v2.4 PWA 優化版) */}
+            {/* 新增：帳號安全卡片 (v2.5 信箱登入版) */}
             <div className={`p-6 rounded-xl shadow-lg border ${user?.isAnonymous ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
                 <h3 className="text-xl font-bold text-gray-800 mb-2 flex items-center justify-between">
                     <div className="flex items-center">
                         {user?.isAnonymous ? <ShieldCheck className="w-5 h-5 mr-2 text-orange-500" /> : <ShieldCheck className="w-5 h-5 mr-2 text-green-600" />}
                         帳號狀態：{user?.isAnonymous ? '訪客 (未備份)' : '已登入'}
                     </div>
-                    <span className="text-xs text-gray-400 font-normal">v2.4 {isPWA ? '(App)' : '(Web)'}</span>
+                    <span className="text-xs text-gray-400 font-normal">v2.5</span>
                 </h3>
                 
-                {/* 顯示詳細除錯訊息 */}
-                {debugMsg && (
-                    <div className="mb-3 p-2 bg-red-100 border border-red-200 rounded text-xs text-red-700 whitespace-pre-wrap font-mono">
-                        {debugMsg}
-                    </div>
-                )}
+                {/* 除錯訊息 */}
+                {debugMsg && <div className="mb-3 p-2 bg-red-100 border border-red-200 rounded text-xs text-red-700 whitespace-pre-wrap font-mono">{debugMsg}</div>}
 
                 {user?.isAnonymous ? (
                     <div className="space-y-3">
                         <p className="text-sm text-gray-600">
-                            {isPWA ? '您正在使用 App 模式，請登入以同步資料。' : '目前為訪客模式，清除快取將導致資料遺失。'}
+                            {isPWA ? '在 App 模式下，建議使用信箱登入以確保同步。' : '目前為訪客模式，清除快取將導致資料遺失。'}
                         </p>
                         
-                        <div className="flex flex-col gap-2">
-                            {/* 綁定備份區 */}
-                            <button onClick={handleLinkGoogle} disabled={isLoading} className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-3 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 text-sm">
-                                {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <ShieldCheck className="w-4 h-4 mr-2" />}
-                                綁定目前資料 (Google)
-                            </button>
+                        {!isEmailMode ? (
+                            <div className="flex flex-col gap-2">
+                                {/* Google 區塊 (保留) */}
+                                <div className="flex gap-2">
+                                    <button onClick={handleLinkGoogle} disabled={isLoading} className="flex-1 bg-white border border-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 text-xs">
+                                        <ShieldCheck className="w-3 h-3 mr-1" /> 綁定 Google
+                                    </button>
+                                    <button onClick={handleLoginGoogle} disabled={isLoading} className="flex-1 bg-white border border-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 text-xs">
+                                        <LogIn className="w-3 h-3 mr-1" /> 登入 Google
+                                    </button>
+                                </div>
 
-                            <div className="text-center text-xs text-gray-400 font-bold my-1">- 或 -</div>
+                                <div className="text-center text-xs text-gray-400 font-bold my-1">- 推薦 (最穩定) -</div>
 
-                            {/* 登入舊帳號區 */}
-                            <button onClick={handleLoginGoogle} disabled={isLoading} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg shadow-sm flex items-center justify-center hover:bg-indigo-700 text-sm">
-                                {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <LogIn className="w-4 h-4 mr-2" />}
-                                登入舊帳號 (Google)
-                            </button>
-                        </div>
-                        {isPWA && <p className="text-xs text-gray-400 text-center mt-2">* App 模式下使用彈出視窗登入最穩定</p>}
+                                {/* 切換到信箱模式 */}
+                                <button onClick={() => setIsEmailMode(true)} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg shadow-sm flex items-center justify-center hover:bg-indigo-700 text-sm">
+                                    <Mail className="w-4 h-4 mr-2" />
+                                    使用信箱 / 密碼 (設定或登入)
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="bg-white p-4 rounded-lg border border-indigo-100 space-y-3 animate-fade-in">
+                                <h4 className="text-sm font-bold text-indigo-700 mb-2">信箱登入 / 設定密碼</h4>
+                                <input type="email" placeholder="輸入 Email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full p-2 border rounded text-sm"/>
+                                <input type="password" placeholder="輸入密碼 (至少6碼)" value={password} onChange={e=>setPassword(e.target.value)} className="w-full p-2 border rounded text-sm"/>
+                                
+                                <div className="flex gap-2 pt-2">
+                                    <button onClick={handleLinkEmail} disabled={isLoading} className="flex-1 bg-green-600 text-white font-bold py-2 rounded shadow hover:bg-green-700 text-xs">
+                                        {isLoading ? '處理中...' : '設定新密碼 (綁定)'}
+                                    </button>
+                                    <button onClick={handleLoginEmail} disabled={isLoading} className="flex-1 bg-indigo-600 text-white font-bold py-2 rounded shadow hover:bg-indigo-700 text-xs">
+                                        {isLoading ? '處理中...' : '登入舊帳號'}
+                                    </button>
+                                </div>
+                                <button onClick={() => setIsEmailMode(false)} className="w-full text-gray-400 text-xs mt-2 underline">取消</button>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div>
                         <div className="text-sm text-green-700 font-medium flex items-center mb-4">
-                            <CheckCircle className="w-4 h-4 mr-2"/> 已連結：{user?.email}
+                            <CheckCircle className="w-4 h-4 mr-2"/> 已連結：{user?.email || '已登入'}
                         </div>
+                        {/* 如果已登入但還沒設密碼，也可以在這裡設 */}
+                        {!user.email && (
+                             <button onClick={() => setIsEmailMode(true)} className="w-full bg-indigo-50 text-indigo-600 border border-indigo-200 font-bold py-2 rounded-lg flex items-center justify-center mb-2 text-sm hover:bg-indigo-100">
+                                <Lock className="w-4 h-4 mr-2" /> 設定信箱密碼 (方便手機登入)
+                            </button>
+                        )}
+                        {isEmailMode && (
+                             <div className="bg-white p-4 rounded-lg border border-indigo-100 space-y-3 mb-3">
+                                <input type="email" placeholder="輸入 Email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full p-2 border rounded text-sm"/>
+                                <input type="password" placeholder="輸入密碼" value={password} onChange={e=>setPassword(e.target.value)} className="w-full p-2 border rounded text-sm"/>
+                                <button onClick={handleLinkEmail} className="w-full bg-green-600 text-white font-bold py-2 rounded shadow text-xs">確認綁定</button>
+                                <button onClick={() => setIsEmailMode(false)} className="w-full text-gray-400 text-xs mt-2 underline">取消</button>
+                             </div>
+                        )}
+
                         <button onClick={handleLogout} className="w-full bg-gray-200 text-gray-700 font-bold py-2 rounded-lg flex items-center justify-center hover:bg-gray-300">
                             <LogOut className="w-4 h-4 mr-2" /> 登出
                         </button>
@@ -523,9 +574,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             
             {/* 歷史列表 */}
             <div className="bg-white p-4 rounded-xl shadow-lg">
-                <div className="flex justify-between items-center mb-3 border-b pb-2">
-                    <h3 className="text-lg font-bold text-gray-800">歷史紀錄</h3>
-                </div>
+                <h3 className="text-lg font-bold text-gray-800 mb-3 border-b pb-2">歷史紀錄</h3>
                 {sortedMetrics.length === 0 ? <p className="text-center text-gray-500">無數據</p> : (
                     <table className="min-w-full text-sm"><thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left">日期</th><th>體重</th><th>體脂</th><th className="text-right">操作</th></tr></thead>
                     <tbody>{sortedMetrics.map(m => (<tr key={m.date} className="border-b hover:bg-gray-50"><td className="px-4 py-3 font-medium text-gray-900">{m.date}</td><td className="text-center">{m.weight}</td><td className="text-center">{m.bodyFat||'-'}</td><td className="text-right"><button onClick={() => handleEdit(m)} className="text-indigo-500 mr-3"><PenSquare className="w-4 h-4"/></button><button onClick={() => handleDelete(m.date)} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4"/></button></td></tr>))}</tbody></table>
