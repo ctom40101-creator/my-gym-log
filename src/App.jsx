@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, linkWithRedirect, signInWithRedirect, signOut, getRedirectResult, linkWithPopup, signInWithPopup } from 'firebase/auth';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signOut, linkWithPopup, signInWithPopup } from 'firebase/auth';
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
@@ -268,7 +268,7 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - v2.6 Google Only (Redirect + Popup)
+// 新增：個人頁面 (ProfileScreen) - v2.7 Popup Only
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
@@ -314,36 +314,28 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     };
 
-    // Google 綁定
-    const handleLinkGoogle = async (method = 'popup') => {
+    // Google 綁定 (Popup Only)
+    const handleLinkGoogle = async () => {
         setIsLoading(true); setDebugMsg('');
         const provider = new GoogleAuthProvider();
         try {
-            if (method === 'redirect') {
-                await linkWithRedirect(auth.currentUser, provider);
-            } else {
-                await linkWithPopup(auth.currentUser, provider);
-                setIsLoading(false);
-                alert("綁定成功！資料已安全連結至 Google 帳號。");
-            }
+            await linkWithPopup(auth.currentUser, provider);
+            setIsLoading(false);
+            alert("綁定成功！資料已安全連結至 Google 帳號。");
         } catch (error) {
-            handleError(error, `Link(${method})`);
+            handleError(error, 'Google Link');
         }
     };
 
-    // Google 登入
-    const handleLoginGoogle = async (method = 'popup') => {
+    // Google 登入 (Popup Only)
+    const handleLoginGoogle = async () => {
         setIsLoading(true); setDebugMsg('');
         const provider = new GoogleAuthProvider();
         try {
-            if (method === 'redirect') {
-                await signInWithRedirect(auth, provider);
-            } else {
-                await signInWithPopup(auth, provider);
-                setIsLoading(false);
-            }
+            await signInWithPopup(auth, provider);
+            setIsLoading(false);
         } catch (error) {
-            handleError(error, `Login(${method})`);
+            handleError(error, 'Google Login');
         }
     };
 
@@ -433,14 +425,14 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     return (
         <div className="space-y-6">
             
-            {/* 新增：帳號安全卡片 (v2.6 Google Only) */}
+            {/* 新增：帳號安全卡片 (v2.7 Popup Only) */}
             <div className={`p-6 rounded-xl shadow-lg border ${user?.isAnonymous ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
                 <h3 className="text-xl font-bold text-gray-800 mb-2 flex items-center justify-between">
                     <div className="flex items-center">
                         {user?.isAnonymous ? <ShieldCheck className="w-5 h-5 mr-2 text-orange-500" /> : <ShieldCheck className="w-5 h-5 mr-2 text-green-600" />}
                         帳號狀態：{user?.isAnonymous ? '訪客 (未備份)' : '已登入'}
                     </div>
-                    <span className="text-xs text-gray-400 font-normal">v2.6</span>
+                    <span className="text-xs text-gray-400 font-normal">v2.7 (Popup)</span>
                 </h3>
                 
                 {/* 除錯訊息 */}
@@ -452,28 +444,20 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                             {isPWA ? '在 App 模式下，請使用下方按鈕登入以同步資料。' : '目前為訪客模式，清除快取將導致資料遺失。'}
                         </p>
                         
-                        <div className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-3">
                             {/* 綁定區 */}
-                            <div className="text-xs font-bold text-gray-500 mt-2">綁定 (備份目前資料)</div>
-                            <div className="flex gap-2">
-                                <button onClick={() => handleLinkGoogle('redirect')} disabled={isLoading} className="flex-1 bg-white border border-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 text-xs">
-                                    {isLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin"/> : <ShieldCheck className="w-3 h-3 mr-1" />} 轉跳 (Safari)
-                                </button>
-                                <button onClick={() => handleLinkGoogle('popup')} disabled={isLoading} className="flex-1 bg-white border border-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 text-xs">
-                                    {isLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin"/> : <ShieldCheck className="w-3 h-3 mr-1" />} 彈窗 (App)
-                                </button>
-                            </div>
+                            <button onClick={handleLinkGoogle} disabled={isLoading} className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-3 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 text-sm">
+                                {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <ShieldCheck className="w-4 h-4 mr-2" />}
+                                綁定目前資料到 Google (備份)
+                            </button>
+
+                            <div className="text-center text-xs text-gray-400 font-bold">- 或 -</div>
 
                             {/* 登入區 */}
-                            <div className="text-xs font-bold text-gray-500 mt-2">登入 (找回舊資料)</div>
-                            <div className="flex gap-2">
-                                <button onClick={() => handleLoginGoogle('redirect')} disabled={isLoading} className="flex-1 bg-indigo-600 text-white font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-indigo-700 text-xs">
-                                    {isLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin"/> : <LogIn className="w-3 h-3 mr-1" />} 轉跳 (Safari)
-                                </button>
-                                <button onClick={() => handleLoginGoogle('popup')} disabled={isLoading} className="flex-1 bg-indigo-600 text-white font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-indigo-700 text-xs">
-                                    {isLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin"/> : <LogIn className="w-3 h-3 mr-1" />} 彈窗 (App)
-                                </button>
-                            </div>
+                            <button onClick={handleLoginGoogle} disabled={isLoading} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg shadow-sm flex items-center justify-center hover:bg-indigo-700 text-sm">
+                                {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <LogIn className="w-4 h-4 mr-2" />}
+                                登入 Google 帳號 (找回舊資料)
+                            </button>
                         </div>
                     </div>
                 ) : (
@@ -531,9 +515,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             
             {/* 歷史列表 */}
             <div className="bg-white p-4 rounded-xl shadow-lg">
-                <div className="flex justify-between items-center mb-3 border-b pb-2">
-                    <h3 className="text-lg font-bold text-gray-800">歷史紀錄</h3>
-                </div>
+                <h3 className="text-lg font-bold text-gray-800 mb-3 border-b pb-2">歷史紀錄</h3>
                 {sortedMetrics.length === 0 ? <p className="text-center text-gray-500">無數據</p> : (
                     <table className="min-w-full text-sm"><thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left">日期</th><th>體重</th><th>體脂</th><th className="text-right">操作</th></tr></thead>
                     <tbody>{sortedMetrics.map(m => (<tr key={m.date} className="border-b hover:bg-gray-50"><td className="px-4 py-3 font-medium text-gray-900">{m.date}</td><td className="text-center">{m.weight}</td><td className="text-center">{m.bodyFat||'-'}</td><td className="text-right"><button onClick={() => handleEdit(m)} className="text-indigo-500 mr-3"><PenSquare className="w-4 h-4"/></button><button onClick={() => handleDelete(m.date)} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4"/></button></td></tr>))}</tbody></table>
@@ -718,28 +700,9 @@ const App = () => {
     useEffect(() => {
         if (!auth) return;
         const init = async () => {
-            // 嘗試取得重定向結果 (處理 Redirect 登入後的回調)
-            try {
-                const result = await getRedirectResult(auth);
-                if (result) {
-                    console.log("Redirect sign-in success:", result.user.email);
-                    // 這裡可以加入成功提示，但通常 onAuthStateChanged 會自動更新 UI
-                }
-            } catch (error) {
-                console.error("Redirect sign-in error:", error);
-                if (error.code === 'auth/credential-already-in-use') {
-                    alert("此 Google 帳號已有其他紀錄，無法合併。");
-                } else if (error.code === 'auth/operation-not-allowed') {
-                    alert(`[${error.code}] 登入失敗：請確認 Firebase Console 已啟用 Google 登入。`);
-                } else if (error.code === 'auth/unauthorized-domain') {
-                    alert(`[${error.code}] 網域未授權！\n請至 Firebase Console -> Authentication -> Settings -> Authorized domains\n新增您的網址：${window.location.hostname}`);
-                } else if (error.code !== 'auth/popup-closed-by-user') {
-                    alert(`[${error.code}] 登入發生錯誤：${error.message}`);
-                }
-            }
-
+            // Removed getRedirectResult block
             if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
-            else if (!auth.currentUser) await signInAnonymously(auth); // 只有當沒有使用者時才匿名登入
+            else if (!auth.currentUser) await signInAnonymously(auth);
             
             setUserId(auth.currentUser?.uid);
             setIsAuthReady(true);
