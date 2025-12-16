@@ -15,7 +15,7 @@ import {
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -663,6 +663,22 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
         setSelectedItems(new Set());
     };
 
+    // 新增：下載範例 CSV
+    const handleDownloadSampleCSV = () => {
+        const headers = "名稱,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量\n";
+        const sampleRow1 = "範例臥推,推,胸,胸大肌,三頭肌,保持背部挺直,,20\n";
+        const sampleRow2 = "範例深蹲,腿,腿,股四頭肌,臀大肌,膝蓋對準腳尖,,20";
+        // 加入 BOM (\uFEFF) 以解決 Excel 中文亂碼問題
+        const blob = new Blob(["\uFEFF" + headers + sampleRow1 + sampleRow2], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', 'movement_sample.csv');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     // 新增：CSV 匯入
     const handleImportCSV = async (e) => {
         const file = e.target.files[0];
@@ -717,19 +733,26 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
 
             {/* 匯入區塊 (僅在管理模式顯示) */}
             {isBatchMode && (
-                <div className="bg-gray-100 p-3 rounded-xl mb-4 flex justify-between items-center animate-fade-in">
-                    <div className="flex items-center gap-2">
-                        <label className="cursor-pointer bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-gray-50">
-                            <Upload className="w-3 h-3 mr-1" /> 匯入 CSV
-                            <input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} />
-                        </label>
-                        <span className="text-[10px] text-gray-400">格式: 名稱,類型,部位...</span>
+                <div className="bg-gray-100 p-3 rounded-xl mb-4 animate-fade-in">
+                    <div className="flex justify-between items-center mb-2">
+                        <div className="flex gap-2">
+                             <label className="cursor-pointer bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-gray-50">
+                                <Upload className="w-3 h-3 mr-1" /> 匯入 CSV
+                                <input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} />
+                            </label>
+                            <button onClick={handleDownloadSampleCSV} className="bg-white border border-indigo-200 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-indigo-50">
+                                <FileSpreadsheet className="w-3 h-3 mr-1" /> 下載範例
+                            </button>
+                        </div>
+                        {selectedItems.size > 0 && (
+                            <button onClick={handleBatchDelete} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center">
+                                <Trash2 className="w-3 h-3 mr-1" /> 刪除 ({selectedItems.size})
+                            </button>
+                        )}
                     </div>
-                    {selectedItems.size > 0 && (
-                        <button onClick={handleBatchDelete} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center">
-                            <Trash2 className="w-3 h-3 mr-1" /> 刪除 ({selectedItems.size})
-                        </button>
-                    )}
+                    <div className="text-[10px] text-gray-400 px-1">
+                        格式順序: 名稱, 類型, 部位, 主要肌群, 協同肌群, 提示, 影片連結, 初始重量
+                    </div>
                 </div>
             )}
 
