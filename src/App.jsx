@@ -15,7 +15,7 @@ import {
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, DatabaseBackup
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -293,7 +293,7 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - v3.2 包含「救援舊資料」功能
+// 新增：個人頁面 (ProfileScreen) - v3.2 (移除救援功能)
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
@@ -405,7 +405,8 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         
         setIsLoading(true);
         try {
-            // 1. 刪除資料庫紀錄
+            // 1. 刪除資料庫紀錄 (手動刪除主要集合)
+            // 注意：這裡只做簡單刪除，大量數據建議用 Cloud Functions，但在 Client 端盡力而為
             const collectionsToDelete = ['LogDB', 'BodyMetricsDB', 'MovementDB', 'PlansDB'];
             for (const colName of collectionsToDelete) {
                 const q = query(collection(db, `artifacts/${appId}/users/${userId}/${colName}`));
@@ -421,48 +422,9 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             await deleteUser(user);
             alert("帳號與資料已成功刪除。");
             
+            // 刪除後會自動登出
         } catch (error) {
             handleError(error, '刪除帳號');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    // 救援舊資料 (Migration)
-    const handleMigrateOldData = async () => {
-        if (!confirm("這將會把您以前建立在「公共區」的動作與菜單，複製一份到您的「個人帳號」中。\n\n確定要執行救援嗎？")) return;
-        setIsLoading(true);
-        try {
-            const batch = writeBatch(db);
-            let count = 0;
-
-            // 1. Migrate Movements
-            const publicMovementsRef = collection(db, `artifacts/${appId}/public/data/MovementDB`);
-            const moveSnap = await getDocs(publicMovementsRef);
-            moveSnap.forEach(d => {
-                const newRef = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, d.id);
-                batch.set(newRef, d.data());
-                count++;
-            });
-
-            // 2. Migrate Plans
-            const publicPlansRef = collection(db, `artifacts/${appId}/public/data/PlansDB`);
-            const planSnap = await getDocs(publicPlansRef);
-            planSnap.forEach(d => {
-                const newRef = doc(db, `artifacts/${appId}/users/${userId}/PlansDB`, d.id);
-                batch.set(newRef, d.data());
-                count++;
-            });
-
-            if (count > 0) {
-                await batch.commit();
-                alert(`成功救援 ${count} 筆資料！\n請回到動作庫與菜單查看。`);
-            } else {
-                alert("在公共區找不到舊資料。");
-            }
-        } catch (error) {
-            console.error("Migration error:", error);
-            alert("救援失敗：" + error.message);
         } finally {
             setIsLoading(false);
         }
@@ -624,20 +586,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                 )}
             </div>
 
-            {/* 資料救援與管理 (New Section) */}
-            <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
-                 <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
-                    <DatabaseBackup className="w-5 h-5 mr-2 text-indigo-600" /> 資料救援與管理
-                </h3>
-                <p className="text-sm text-gray-600 mb-4">
-                    如果您是舊版用戶，發現動作庫或菜單不見了，可以嘗試從公共區救援資料。
-                </p>
-                <button onClick={handleMigrateOldData} disabled={isLoading} className="w-full bg-orange-100 text-orange-700 border border-orange-200 font-bold py-3 rounded-lg flex items-center justify-center hover:bg-orange-200 transition-colors">
-                     {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <Undo2 className="w-4 h-4 mr-2" />}
-                     從公共區匯入舊資料 (救援)
-                </button>
-            </div>
-
             {/* 新增：健身旅程卡片 */}
             <div className="bg-white p-6 rounded-xl shadow-lg border border-indigo-100">
                 <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center"><Trophy className="w-5 h-5 mr-2 text-yellow-500" />個人資訊與旅程</h3>
@@ -699,17 +647,28 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
 const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
     const [filter, setFilter] = useState('');
     const [isEditing, setIsEditing] = useState(false);
-    const [isBatchMode, setIsBatchMode] = useState(false); // 新增：批次模式
-    const [selectedItems, setSelectedItems] = useState(new Set()); // 新增：已選項目
-    const [lastImportedIds, setLastImportedIds] = useState([]); // 新增：上一次匯入的 IDs (用於復原)
+    const [isBatchMode, setIsBatchMode] = useState(false); 
+    const [selectedItems, setSelectedItems] = useState(new Set()); 
+    const [lastImportedIds, setLastImportedIds] = useState([]); 
     const [editingMove, setEditingMove] = useState(null); 
     
-    // LibraryScreen: Update filter buttons to body parts
+    // Fetch Nickname
+    const [nickname, setNickname] = useState('');
+    useEffect(() => {
+        if (!userId) return;
+        const fetchNickname = async () => {
+            const snap = await getDoc(doc(db, `artifacts/${appId}/users/${userId}/Settings`, 'profile'));
+            if (snap.exists()) setNickname(snap.data().nickname || '');
+        };
+        fetchNickname();
+    }, [userId, db, appId]);
+
+    // Import Mode State
+    const [importWithNickname, setImportWithNickname] = useState(false);
+
     const categories = ['胸', '背', '腿', '肩', '手臂', '核心', '全身'];
-    // Filter logic: Check m.bodyPart
     const filteredMovements = movementDB.filter(m => (!filter || m.bodyPart === filter || m.name.includes(filter)));
 
-    // 新增：切換選取
     const toggleSelection = (id) => {
         const newSet = new Set(selectedItems);
         if (newSet.has(id)) newSet.delete(id);
@@ -717,7 +676,6 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         setSelectedItems(newSet);
     };
 
-    // 新增：全選/取消全選
     const toggleSelectAll = () => {
         if (selectedItems.size === filteredMovements.length) {
             setSelectedItems(new Set());
@@ -726,12 +684,11 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         }
     };
 
-    // 新增：批次刪除
     const handleBatchDelete = async () => {
         if (!confirm(`確定要刪除選取的 ${selectedItems.size} 個動作嗎？`)) return;
         const batch = writeBatch(db);
         selectedItems.forEach(id => {
-            const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, id); // 修正為 users 路徑
+            const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, id); 
             batch.delete(ref);
         });
         await batch.commit();
@@ -739,33 +696,49 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         setSelectedItems(new Set());
     };
 
-    // 新增：復原上一次匯入
     const handleUndoImport = async () => {
         if (lastImportedIds.length === 0) return;
         if (!confirm(`確定要復原 (刪除) 剛剛匯入的 ${lastImportedIds.length} 個動作嗎？`)) return;
         
         const batch = writeBatch(db);
         lastImportedIds.forEach(id => {
-            const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, id); // 修正為 users 路徑
+            const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, id); 
             batch.delete(ref);
         });
         
         try {
             await batch.commit();
-            setLastImportedIds([]); // 清空紀錄
+            setLastImportedIds([]); 
             alert("已復原上一次匯入！");
         } catch (error) {
             console.error("Undo failed:", error);
             alert("復原失敗，請稍後再試。");
         }
     };
+    
+    // 匯出 CSV (含暱稱)
+    const handleExportCSV = () => {
+        // 新版格式：暱稱, 名稱...
+        const headers = "暱稱,名稱,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量\n";
+        const rows = movementDB.map(m => {
+            // 包裹雙引號處理逗號
+            return `"${nickname}","${m.name}","${m.type}","${m.bodyPart}","${m.mainMuscle}","${m.secondaryMuscle}","${m.tips}","${m.link}","${m.initialWeight}"`;
+        }).join("\n");
 
-    // 新增：下載範例 CSV (加雙引號 & BOM)
+        const blob = new Blob(["\uFEFF" + headers + rows], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `movement_export_${new Date().toISOString().slice(0,10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     const handleDownloadSampleCSV = () => {
-        const headers = "名稱,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量\n";
-        // 範例資料加上引號，避免逗號衝突
-        const sampleRow1 = `"範例臥推","推","胸","胸大肌","三頭肌","保持背部挺直, 不要聳肩","",20\n`;
-        const sampleRow2 = `"範例深蹲","腿","腿","股四頭肌","臀大肌","膝蓋對準腳尖","",20`;
+        const headers = "暱稱,名稱,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量\n";
+        const sampleRow1 = `"範例教練","臥推(教練版)","推","胸","胸大肌","三頭肌","保持背部挺直, 不要聳肩","",20\n`;
+        const sampleRow2 = `,"深蹲(無暱稱)","腿","腿","股四頭肌","臀大肌","膝蓋對準腳尖","",20`;
         
         const blob = new Blob(["\uFEFF" + headers + sampleRow1 + sampleRow2], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
@@ -777,7 +750,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         document.body.removeChild(link);
     };
 
-    // 新增：CSV 匯入 (增強版解析)
+    // 匯入 CSV (支援新舊格式 + 暱稱處理)
     const handleImportCSV = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -785,12 +758,11 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         
         reader.onload = async (event) => {
             const text = event.target.result;
-            const rows = text.split(/\r?\n/).slice(1); // 兼容 Windows 換行
+            const rows = text.split(/\r?\n/).slice(1); 
             const batch = writeBatch(db);
             let count = 0;
-            const newIds = []; // 暫存這批 ID
+            const newIds = []; 
 
-            // 簡單的 CSV 解析器 (處理引號)
             const parseCSVRow = (row) => {
                 const result = [];
                 let current = '';
@@ -798,7 +770,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
                 for(let i=0; i<row.length; i++) {
                     const char = row[i];
                     if(char === '"') {
-                        if(inQuote && row[i+1] === '"') { // 處理轉義引號
+                        if(inQuote && row[i+1] === '"') { 
                             current += '"';
                             i++;
                         } else {
@@ -816,32 +788,52 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
             };
 
             rows.forEach(row => {
-                if (!row.trim()) return; // 跳過空行
+                if (!row.trim()) return;
                 const cols = parseCSVRow(row);
-                if (cols.length >= 2) { 
-                    const name = cols[0]?.trim();
-                    if (name) {
-                        const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, name); // 修正為 users 路徑
-                        batch.set(ref, {
-                            name: name,
-                            type: cols[1]?.trim() || '',
-                            bodyPart: cols[2]?.trim() || '',
-                            mainMuscle: cols[3]?.trim() || '',
-                            secondaryMuscle: cols[4]?.trim() || '',
-                            tips: cols[5]?.trim() || '',
-                            link: cols[6]?.trim() || '',
-                            initialWeight: Number(cols[7]?.trim()) || 20
-                        });
-                        count++;
-                        newIds.push(name);
+                
+                // 判斷格式：舊版(8欄) vs 新版(9欄，第一欄是暱稱)
+                let sourceNickname = '';
+                let name = '';
+                let dataStartIdx = 0;
+
+                if (cols.length >= 9) { // 新版格式
+                    sourceNickname = cols[0];
+                    name = cols[1];
+                    dataStartIdx = 1;
+                } else if (cols.length >= 8) { // 舊版格式
+                    name = cols[0];
+                    dataStartIdx = 0;
+                } else {
+                    return; // 格式錯誤
+                }
+
+                if (name) {
+                    // 根據模式決定名稱
+                    let finalName = name;
+                    if (importWithNickname && sourceNickname) {
+                        finalName = `(來自${sourceNickname})${name}`;
                     }
+
+                    const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, finalName); 
+                    batch.set(ref, {
+                        name: finalName,
+                        type: cols[dataStartIdx+1]?.trim() || '',
+                        bodyPart: cols[dataStartIdx+2]?.trim() || '',
+                        mainMuscle: cols[dataStartIdx+3]?.trim() || '',
+                        secondaryMuscle: cols[dataStartIdx+4]?.trim() || '',
+                        tips: cols[dataStartIdx+5]?.trim() || '',
+                        link: cols[dataStartIdx+6]?.trim() || '',
+                        initialWeight: Number(cols[dataStartIdx+7]?.trim()) || 20
+                    });
+                    count++;
+                    newIds.push(finalName);
                 }
             });
 
             if (count > 0) {
                 try {
                     await batch.commit();
-                    setLastImportedIds(newIds); // 成功後記住這批 ID
+                    setLastImportedIds(newIds); 
                     alert(`成功匯入 ${count} 個動作！\n如果不滿意，可以點擊「復原」按鈕撤銷。`);
                 } catch (error) {
                     console.error("Import failed:", error);
@@ -852,7 +844,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
             }
         };
         reader.readAsText(file);
-        e.target.value = null; // 重置 input 讓同檔名可再選
+        e.target.value = null; 
     };
     
     const handleSaveMovement = async () => {
@@ -871,41 +863,51 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
                 <button onClick={() => setIsBatchMode(!isBatchMode)} className={`px-4 rounded-xl font-bold border ${isBatchMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-600'}`}>{isBatchMode ? '完成' : '管理'}</button>
             </div>
 
-            {/* 匯入區塊 (僅在管理模式顯示) */}
+            {/* 匯入匯出區塊 (僅在管理模式顯示) */}
             {isBatchMode && (
                 <div className="bg-gray-100 p-3 rounded-xl mb-4 animate-fade-in">
                     <div className="flex flex-col gap-3">
-                        <div className="flex justify-between items-center">
+                        {/* 匯出 */}
+                        <div className="flex justify-between items-center border-b pb-2 border-gray-200">
+                             <div className="text-sm font-bold text-gray-600">匯出動作庫</div>
+                             <button onClick={handleExportCSV} className="bg-white border border-indigo-200 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-indigo-50">
+                                <Download className="w-3 h-3 mr-1" /> 匯出 CSV (含暱稱)
+                            </button>
+                        </div>
+
+                        {/* 匯入 */}
+                        <div className="flex flex-col gap-2">
+                            <div className="text-sm font-bold text-gray-600">匯入動作</div>
+                            
+                            <div className="flex items-center gap-2 mb-1">
+                                <input type="checkbox" id="importNick" checked={importWithNickname} onChange={e=>setImportWithNickname(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" />
+                                <label htmlFor="importNick" className="text-xs text-gray-600">若 CSV 包含暱稱，動作名稱加上 (來自 XXX)</label>
+                            </div>
+
                             <div className="flex gap-2">
-                                 <label className="cursor-pointer bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-gray-50">
-                                    <Upload className="w-3 h-3 mr-1" /> 匯入 CSV
+                                 <label className="flex-1 cursor-pointer bg-indigo-600 text-white px-3 py-2 rounded-lg text-xs font-bold flex items-center justify-center hover:bg-indigo-700 shadow-sm">
+                                    <Upload className="w-3 h-3 mr-1" /> 選擇檔案匯入
                                     <input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} />
                                 </label>
-                                <button onClick={handleDownloadSampleCSV} className="bg-white border border-indigo-200 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-indigo-50">
-                                    <Download className="w-3 h-3 mr-1" /> 下載範例
+                                <button onClick={handleDownloadSampleCSV} className="bg-white border border-gray-300 text-gray-500 px-3 py-2 rounded-lg text-xs font-bold hover:bg-gray-50">
+                                    下載範例
                                 </button>
                             </div>
-                            
-                            {/* 復原按鈕 (只有剛匯入後才會出現) */}
-                            {lastImportedIds.length > 0 && (
-                                <button onClick={handleUndoImport} className="bg-yellow-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center shadow-sm animate-pulse">
-                                    <Undo2 className="w-3 h-3 mr-1" /> 復原匯入
-                                </button>
-                            )}
                         </div>
-                        
-                        {/* 刪除按鈕 */}
-                        {selectedItems.size > 0 && (
-                            <div className="flex justify-end">
+
+                        {/* 復原 & 刪除 */}
+                        <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                            {lastImportedIds.length > 0 ? (
+                                <button onClick={handleUndoImport} className="bg-yellow-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center shadow-sm">
+                                    <Undo2 className="w-3 h-3 mr-1" /> 復原上一次匯入
+                                </button>
+                            ) : <div></div>}
+                            
+                            {selectedItems.size > 0 && (
                                 <button onClick={handleBatchDelete} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center">
                                     <Trash2 className="w-3 h-3 mr-1" /> 刪除 ({selectedItems.size})
                                 </button>
-                            </div>
-                        )}
-                        
-                        <div className="text-[10px] text-gray-400 px-1 border-t pt-2 mt-1">
-                            欄位順序: 名稱, 類型, 部位, 主要肌群, 協同肌群, 提示, 影片連結, 初始重量<br/>
-                            (若內容包含逗號，請用雙引號包起來，例如 "提示1, 提示2")
+                            )}
                         </div>
                     </div>
                 </div>
