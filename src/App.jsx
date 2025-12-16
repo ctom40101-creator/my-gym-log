@@ -9,7 +9,9 @@ import {
   linkWithCredential, 
   signInWithEmailAndPassword, 
   signOut, 
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  browserLocalPersistence, // 確保引入持久化設定
+  setPersistence
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc } from 'firebase/firestore';
 import {
@@ -152,7 +154,7 @@ const RpeSelectorAlwaysVisible = ({ value, onChange }) => {
     );
 };
 
-// 6. 動作編輯器
+// 6. 動作編輯器 (AI Prompt 複製功能)
 const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
     const types = ['推', '拉', '腿', '核心'];
     const bodyParts = ['胸', '背', '腿', '肩', '核心', '手臂', '全身']; 
@@ -278,7 +280,7 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - v3.0 純信箱版 (最穩定)
+// 新增：個人頁面 (ProfileScreen) - v3.0 純信箱版 (穩定登入 + 防呆機制)
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
@@ -757,13 +759,33 @@ const App = () => {
     useEffect(() => {
         if (!auth) return;
         const init = async () => {
+            // 注意：我們移除了一開始就強制匿名登入的邏輯
+            // 現在改由 onAuthStateChanged 監聽，如果真的沒人，才在需要時登入
+            // 但為了讓訪客能用，我們這裡還是保留自動匿名登入
             if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
-            else if (!auth.currentUser) await signInAnonymously(auth);
+            else {
+                // 等待一下確認沒有currentUser才匿名，避免覆蓋
+                const unsubscribe = onAuthStateChanged(auth, async (user) => {
+                    if (!user) {
+                        await signInAnonymously(auth);
+                    }
+                    unsubscribe();
+                });
+            }
             
-            setUserId(auth.currentUser?.uid);
+            // setUserId 會由下方的 onAuthStateChanged 統一管理
             setIsAuthReady(true);
         };
         init();
+    }, []);
+
+    // 統一監聽登入狀態
+    useEffect(() => {
+        if(!auth) return;
+        const unsub = onAuthStateChanged(auth, (u) => {
+            setUserId(u?.uid);
+        });
+        return () => unsub();
     }, []);
 
     useEffect(() => {
