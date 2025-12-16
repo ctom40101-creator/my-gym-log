@@ -10,13 +10,12 @@ import {
   signInWithEmailAndPassword, 
   signOut, 
   sendPasswordResetEmail,
-  browserLocalPersistence, // 確保引入持久化設定
-  setPersistence
+  deleteUser // 引入刪除使用者功能
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -280,7 +279,7 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - v3.0 純信箱版 (穩定登入 + 防呆機制)
+// 新增：個人頁面 (ProfileScreen) - v3.1 純信箱版 (最穩定 + 刪除帳號)
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
@@ -298,7 +297,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [user, setUser] = useState(auth?.currentUser);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState(''); // 新增：確認密碼
+    const [confirmPassword, setConfirmPassword] = useState(''); // 確認密碼
     const [isSetPasswordMode, setIsSetPasswordMode] = useState(false);
     const [isLoginMode, setIsLoginMode] = useState(false); 
 
@@ -309,7 +308,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     }, [auth]);
 
-    // 檢查是否已設定過密碼 (是否有 password provider)
+    // 檢查是否已設定過密碼
     const isEmailLinked = useMemo(() => {
         return user?.providerData?.some(p => p.providerId === 'password');
     }, [user]);
@@ -325,6 +324,8 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
              alert("密碼錯誤。");
         } else if (error.code === 'auth/user-not-found') {
              alert("找不到此帳號。");
+        } else if (error.code === 'auth/requires-recent-login') {
+             alert("為了安全起見，請先登出並重新登入後，再執行刪除動作。");
         } else {
              alert(`${action} 失敗：${error.message}`);
         }
@@ -341,7 +342,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             await linkWithCredential(auth.currentUser, credential);
             setIsLoading(false);
             setIsSetPasswordMode(false);
-            alert("帳號設定成功！您現在可以用這組信箱密碼登入了。");
+            alert("帳號設定成功！以後請使用此信箱密碼登入。");
         } catch (error) {
             handleError(error, '設定帳密');
         }
@@ -378,7 +379,38 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const handleLogout = async () => {
         if (confirm("確定要登出嗎？")) {
             await signOut(auth);
-            await signInAnonymously(auth); 
+            // 登出後，會自動觸發 App 層級的 onAuthStateChanged 變回匿名
+        }
+    };
+
+    // 刪除帳號與資料
+    const handleDeleteAccount = async () => {
+        if (!confirm("警告！這將永久刪除您的帳號以及所有訓練紀錄，無法復原。\n\n您確定要繼續嗎？")) return;
+        
+        setIsLoading(true);
+        try {
+            // 1. 刪除資料庫紀錄 (手動刪除主要集合)
+            // 注意：這裡只做簡單刪除，大量數據建議用 Cloud Functions，但在 Client 端盡力而為
+            const collectionsToDelete = ['LogDB', 'BodyMetricsDB'];
+            for (const colName of collectionsToDelete) {
+                const q = query(collection(db, `artifacts/${appId}/users/${userId}/${colName}`));
+                const snapshot = await getDocs(q);
+                const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+                await Promise.all(deletePromises);
+            }
+            
+            // 刪除設定檔
+            await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/Settings`, 'profile'));
+
+            // 2. 刪除使用者帳號
+            await deleteUser(user);
+            alert("帳號與資料已成功刪除。");
+            
+            // 刪除後會自動登出
+        } catch (error) {
+            handleError(error, '刪除帳號');
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -460,7 +492,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     return (
         <div className="space-y-6">
             
-            {/* 新增：帳號中心 (v3.0 純信箱版) */}
+            {/* 新增：帳號中心 (v3.1 純信箱 + 刪除帳號) */}
             <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
                 <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center justify-between">
                     <div className="flex items-center">
@@ -500,16 +532,21 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                     </div>
                 )}
                 
-                {/* 底部功能區 */}
+                {/* 底部功能區 (登出/登入/刪除) */}
                 <div className="flex justify-between items-center text-xs text-gray-500 mt-6">
                     {user?.isAnonymous ? (
                         <button onClick={()=>setIsLoginMode(!isLoginMode)} className="flex items-center hover:text-indigo-600">
                              <LogIn className="w-3 h-3 mr-1" /> 切換至現有帳號
                         </button>
                     ) : (
-                        <button onClick={handleLogout} className="flex items-center text-red-400 hover:text-red-600">
-                             <LogOut className="w-3 h-3 mr-1" /> 登出
-                        </button>
+                        <div className="flex w-full justify-between">
+                            <button onClick={handleDeleteAccount} disabled={isLoading} className="flex items-center text-red-500 hover:text-red-700">
+                                {isLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin"/> : <UserX className="w-3 h-3 mr-1" />} 刪除帳號與資料
+                            </button>
+                            <button onClick={handleLogout} className="flex items-center text-gray-500 hover:text-gray-700">
+                                 <LogOut className="w-3 h-3 mr-1" /> 登出
+                            </button>
+                        </div>
                     )}
                 </div>
 
@@ -759,9 +796,6 @@ const App = () => {
     useEffect(() => {
         if (!auth) return;
         const init = async () => {
-            // 注意：我們移除了一開始就強制匿名登入的邏輯
-            // 現在改由 onAuthStateChanged 監聽，如果真的沒人，才在需要時登入
-            // 但為了讓訪客能用，我們這裡還是保留自動匿名登入
             if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
             else {
                 // 等待一下確認沒有currentUser才匿名，避免覆蓋
