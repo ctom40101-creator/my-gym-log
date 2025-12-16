@@ -5,20 +5,16 @@ import {
   signInAnonymously, 
   signInWithCustomToken, 
   onAuthStateChanged, 
-  GoogleAuthProvider, 
-  linkWithPopup, 
-  signInWithPopup, 
   EmailAuthProvider, 
   linkWithCredential, 
   signInWithEmailAndPassword, 
   signOut, 
-  sendPasswordResetEmail,
-  unlink
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, Link, Unlink
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -282,7 +278,7 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - v3.0 全能型帳號管理 (Email/Pass + Google Link)
+// 新增：個人頁面 (ProfileScreen) - v3.0 純信箱版 (最穩定)
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
@@ -300,8 +296,9 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [user, setUser] = useState(auth?.currentUser);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState(''); // 新增：確認密碼
     const [isSetPasswordMode, setIsSetPasswordMode] = useState(false);
-    const [isLoginMode, setIsLoginMode] = useState(false); // 控制是否顯示「切換登入」區塊
+    const [isLoginMode, setIsLoginMode] = useState(false); 
 
     useEffect(() => {
         if(auth) {
@@ -310,11 +307,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     }, [auth]);
 
-    // 檢查 Provider 狀態
-    const isGoogleLinked = useMemo(() => {
-        return user?.providerData?.some(p => p.providerId === 'google.com');
-    }, [user]);
-    
+    // 檢查是否已設定過密碼 (是否有 password provider)
     const isEmailLinked = useMemo(() => {
         return user?.providerData?.some(p => p.providerId === 'password');
     }, [user]);
@@ -323,7 +316,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         setIsLoading(false);
         console.error(`${action} error:`, error);
         if (error.code === 'auth/email-already-in-use' || error.code === 'auth/credential-already-in-use') {
-             alert("此 Email 已被其他帳號使用。");
+             alert("此 Email 已被其他帳號使用。請改用登入。");
         } else if (error.code === 'auth/weak-password') {
              alert("密碼強度不足 (至少需6位數)。");
         } else if (error.code === 'auth/wrong-password') {
@@ -337,7 +330,9 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
 
     // 1. 設定 Email/密碼 (連結 Password Provider)
     const handleSetEmailPassword = async () => {
-        if(!email || !password) return alert("請輸入完整資訊");
+        if(!email || !password || !confirmPassword) return alert("請輸入完整資訊");
+        if(password !== confirmPassword) return alert("兩次密碼輸入不一致");
+        
         setIsLoading(true);
         try {
             const credential = EmailAuthProvider.credential(email, password);
@@ -360,46 +355,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             setIsLoginMode(false);
         } catch (error) {
             handleError(error, '登入');
-        }
-    };
-
-    // 3. 連結/取消連結 Google
-    const handleGoogleLinkToggle = async () => {
-        setIsLoading(true);
-        try {
-            if (isGoogleLinked) {
-                // 取消連結前檢查是否還有其他登入方式 (避免帳號鎖死)
-                if (!isEmailLinked && user.providerData.length <= 1) {
-                    setIsLoading(false);
-                    return alert("這是您唯一的登入方式，無法取消連結！請先設定 Email 密碼。");
-                }
-                if (confirm("確定要取消與 Google 的連結嗎？")) {
-                    await unlink(auth.currentUser, 'google.com');
-                    alert("已取消 Google 連結。");
-                }
-            } else {
-                // 連結 Google (Popup)
-                const provider = new GoogleAuthProvider();
-                await linkWithPopup(auth.currentUser, provider);
-                alert("Google 帳號連結成功！");
-            }
-        } catch (error) {
-            handleError(error, isGoogleLinked ? '取消連結' : '連結 Google');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-    
-    // 4. Google 登入 (切換帳號)
-    const handleLoginGoogle = async () => {
-        setIsLoading(true);
-        const provider = new GoogleAuthProvider();
-        try {
-            await signInWithPopup(auth, provider);
-            setIsLoading(false);
-            setIsLoginMode(false);
-        } catch (error) {
-            handleError(error, 'Google 登入');
         }
     };
 
@@ -503,7 +458,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     return (
         <div className="space-y-6">
             
-            {/* 新增：帳號中心 (v3.0 全能版) */}
+            {/* 新增：帳號中心 (v3.0 純信箱版) */}
             <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
                 <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center justify-between">
                     <div className="flex items-center">
@@ -514,11 +469,8 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
 
                 {/* 狀態顯示區 */}
                 <div className="flex items-center space-x-2 mb-4">
-                    <div className={`flex-1 p-3 rounded-lg border flex items-center justify-center ${isEmailLinked ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
-                        <Mail className="w-4 h-4 mr-2" /> {isEmailLinked ? '已設帳密' : '未設帳密'}
-                    </div>
-                    <div className={`flex-1 p-3 rounded-lg border flex items-center justify-center ${isGoogleLinked ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
-                        <span className="mr-2 font-bold text-lg">G</span> {isGoogleLinked ? '已連結' : '未連結'}
+                    <div className={`w-full p-3 rounded-lg border flex items-center justify-center ${isEmailLinked ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+                        <Mail className="w-4 h-4 mr-2" /> {isEmailLinked ? `已登入：${user.email}` : '尚未設定帳號密碼'}
                     </div>
                 </div>
 
@@ -530,39 +482,22 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                                 <h4 className="text-sm font-bold text-gray-700 mb-2">建立帳號 (綁定此裝置資料)</h4>
                                 <input type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full p-2 mb-2 border rounded text-sm"/>
                                 <input type="password" placeholder="密碼 (至少6碼)" value={password} onChange={e=>setPassword(e.target.value)} className="w-full p-2 mb-2 border rounded text-sm"/>
+                                <input type="password" placeholder="再次確認密碼" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} className="w-full p-2 mb-2 border rounded text-sm"/>
                                 <div className="flex gap-2">
                                     <button onClick={handleSetEmailPassword} disabled={isLoading} className="flex-1 bg-indigo-600 text-white py-2 rounded text-sm font-bold">
                                         {isLoading ? '處理中...' : '確認建立'}
                                     </button>
-                                    <button onClick={()=>setIsSetPasswordMode(false)} className="px-4 text-gray-500 text-sm">取消</button>
+                                    <button onClick={()=>{setIsSetPasswordMode(false); setConfirmPassword('');}} className="px-4 text-gray-500 text-sm">取消</button>
                                 </div>
                             </div>
                          ) : (
                             <button onClick={()=>setIsSetPasswordMode(true)} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg flex items-center justify-center shadow-md">
-                                <Lock className="w-4 h-4 mr-2" /> 設定信箱與密碼 (推薦)
+                                <Lock className="w-4 h-4 mr-2" /> 設定信箱與密碼 (備份資料)
                             </button>
                          )}
                     </div>
                 )}
                 
-                {/* 已有帳密，顯示信箱 */}
-                {isEmailLinked && (
-                    <div className="mb-4 text-sm text-gray-600 flex items-center justify-center">
-                        目前帳號：<span className="font-bold text-indigo-600 ml-1">{user.email}</span>
-                    </div>
-                )}
-
-                <div className="border-t my-4"></div>
-
-                {/* Google 連結開關 */}
-                <div className="flex justify-between items-center mb-4">
-                    <span className="text-sm font-bold text-gray-700 flex items-center"><span className="text-lg mr-2 font-bold text-blue-500">G</span> 連結 Google 帳號</span>
-                    <button onClick={handleGoogleLinkToggle} disabled={isLoading} className={`px-3 py-1 rounded text-xs font-bold border ${isGoogleLinked ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-gray-600 border-gray-300'}`}>
-                        {isLoading ? '...' : (isGoogleLinked ? '取消連結' : '連結')}
-                    </button>
-                </div>
-                {isGoogleLinked && <p className="text-xs text-gray-400 mb-4">* 連結後，您也可以使用 Google 登入此帳號。</p>}
-
                 {/* 底部功能區 */}
                 <div className="flex justify-between items-center text-xs text-gray-500 mt-6">
                     {user?.isAnonymous ? (
@@ -583,11 +518,8 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                         <div className="space-y-2">
                              <input type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full p-2 border rounded text-sm"/>
                              <input type="password" placeholder="密碼" value={password} onChange={e=>setPassword(e.target.value)} className="w-full p-2 border rounded text-sm"/>
-                             <button onClick={handleLoginEmail} className="w-full bg-indigo-600 text-white py-2 rounded text-sm font-bold">Email 登入</button>
-                             <div className="text-center text-xs text-gray-400 my-1">- 或 -</div>
-                             <button onClick={handleLoginGoogle} className="w-full bg-white border border-gray-300 text-gray-700 py-2 rounded text-sm font-bold flex items-center justify-center">
-                                 <span className="text-lg mr-2 font-bold text-blue-500">G</span> Google 登入
-                             </button>
+                             <button onClick={handleLoginEmail} className="w-full bg-indigo-600 text-white py-2 rounded text-sm font-bold">登入</button>
+                             
                              <div className="flex justify-between mt-2">
                                 <button onClick={handleResetPassword} className="text-xs text-indigo-500">忘記密碼?</button>
                                 <button onClick={()=>setIsLoginMode(false)} className="text-xs text-gray-400">取消</button>
