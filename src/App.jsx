@@ -15,7 +15,7 @@ import {
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, DatabaseBackup
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -293,7 +293,7 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - v3.1 純信箱版 (最穩定 + 刪除帳號)
+// 新增：個人頁面 (ProfileScreen) - v3.2 包含「救援舊資料」功能
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
@@ -405,8 +405,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         
         setIsLoading(true);
         try {
-            // 1. 刪除資料庫紀錄 (手動刪除主要集合)
-            // 注意：這裡只做簡單刪除，大量數據建議用 Cloud Functions，但在 Client 端盡力而為
+            // 1. 刪除資料庫紀錄
             const collectionsToDelete = ['LogDB', 'BodyMetricsDB', 'MovementDB', 'PlansDB'];
             for (const colName of collectionsToDelete) {
                 const q = query(collection(db, `artifacts/${appId}/users/${userId}/${colName}`));
@@ -422,9 +421,48 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             await deleteUser(user);
             alert("帳號與資料已成功刪除。");
             
-            // 刪除後會自動登出
         } catch (error) {
             handleError(error, '刪除帳號');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // 救援舊資料 (Migration)
+    const handleMigrateOldData = async () => {
+        if (!confirm("這將會把您以前建立在「公共區」的動作與菜單，複製一份到您的「個人帳號」中。\n\n確定要執行救援嗎？")) return;
+        setIsLoading(true);
+        try {
+            const batch = writeBatch(db);
+            let count = 0;
+
+            // 1. Migrate Movements
+            const publicMovementsRef = collection(db, `artifacts/${appId}/public/data/MovementDB`);
+            const moveSnap = await getDocs(publicMovementsRef);
+            moveSnap.forEach(d => {
+                const newRef = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, d.id);
+                batch.set(newRef, d.data());
+                count++;
+            });
+
+            // 2. Migrate Plans
+            const publicPlansRef = collection(db, `artifacts/${appId}/public/data/PlansDB`);
+            const planSnap = await getDocs(publicPlansRef);
+            planSnap.forEach(d => {
+                const newRef = doc(db, `artifacts/${appId}/users/${userId}/PlansDB`, d.id);
+                batch.set(newRef, d.data());
+                count++;
+            });
+
+            if (count > 0) {
+                await batch.commit();
+                alert(`成功救援 ${count} 筆資料！\n請回到動作庫與菜單查看。`);
+            } else {
+                alert("在公共區找不到舊資料。");
+            }
+        } catch (error) {
+            console.error("Migration error:", error);
+            alert("救援失敗：" + error.message);
         } finally {
             setIsLoading(false);
         }
@@ -584,6 +622,20 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                         </div>
                     </div>
                 )}
+            </div>
+
+            {/* 資料救援與管理 (New Section) */}
+            <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+                 <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                    <DatabaseBackup className="w-5 h-5 mr-2 text-indigo-600" /> 資料救援與管理
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">
+                    如果您是舊版用戶，發現動作庫或菜單不見了，可以嘗試從公共區救援資料。
+                </p>
+                <button onClick={handleMigrateOldData} disabled={isLoading} className="w-full bg-orange-100 text-orange-700 border border-orange-200 font-bold py-3 rounded-lg flex items-center justify-center hover:bg-orange-200 transition-colors">
+                     {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <Undo2 className="w-4 h-4 mr-2" />}
+                     從公共區匯入舊資料 (救援)
+                </button>
             </div>
 
             {/* 新增：健身旅程卡片 */}
