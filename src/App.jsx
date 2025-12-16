@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, linkWithRedirect, signInWithRedirect, signOut, getRedirectResult } from 'firebase/auth';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, linkWithRedirect, signInWithRedirect, signOut, getRedirectResult, linkWithPopup, signInWithPopup } from 'firebase/auth';
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -276,6 +276,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const today = new Date().toISOString().substring(0, 10);
     const [date, setDate] = useState(today);
     const [isLoading, setIsLoading] = useState(false); 
+    const [debugMsg, setDebugMsg] = useState(''); // 新增：除錯訊息顯示
 
     // 新增：生涯設定
     const [startDate, setStartDate] = useState('');
@@ -291,36 +292,69 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     }, [auth]);
 
-    // Google 綁定邏輯 (使用 Redirect 改善手機體驗)
-    const handleLinkGoogle = async () => {
-        setIsLoading(true); 
+    // 通用錯誤處理
+    const handleError = (error, action) => {
+        setIsLoading(false);
+        console.error(`${action} error:`, error);
+        setDebugMsg(`[${action} Error]\nCode: ${error.code}\nMsg: ${error.message}`);
+        
+        if (error.code === 'auth/provider-already-linked') {
+             alert("此帳號已經綁定過 Google 了。");
+        } else if (error.code === 'auth/operation-not-allowed') {
+             alert(`[${error.code}] 功能未開啟：請確認 Firebase Console > Authentication > Sign-in method 已啟用 Google。`);
+        } else if (error.code === 'auth/unauthorized-domain') {
+             alert(`[${error.code}] 網域未授權：請至 Firebase Console 新增 ${window.location.hostname}`);
+        } else if (error.code === 'auth/popup-blocked') {
+             alert(`[${error.code}] 視窗被阻擋：請允許彈出視窗，或改用 Redirect 模式。`);
+        } else {
+             alert(`[${error.code}] 失敗：${error.message}`);
+        }
+    };
+
+    // 1. Google 綁定 (Redirect 模式 - 推薦手機)
+    const handleLinkGoogleRedirect = async () => {
+        setIsLoading(true); setDebugMsg('');
         const provider = new GoogleAuthProvider();
         try {
             await linkWithRedirect(auth.currentUser, provider);
         } catch (error) {
-            setIsLoading(false); 
-            console.error("Link redirect error:", error);
-            // 這裡的 alert 包含 Error Code，方便您確認是否為最新版程式碼
-            if (error.code === 'auth/provider-already-linked') {
-                 alert("此帳號已經綁定過 Google 了。");
-            } else if (error.code === 'auth/operation-not-allowed') {
-                 alert(`[${error.code}] 綁定失敗：請確認 Firebase Console 已啟用 Google 登入。`);
-            } else {
-                 alert(`[${error.code}] 綁定啟動失敗：${error.message}\n如果是手機 App，請確認網域授權。`);
-            }
+            handleError(error, 'LinkRedirect');
         }
     };
 
-    // Google 登入邏輯 (使用 Redirect 改善手機體驗)
-    const handleLoginGoogle = async () => {
-        setIsLoading(true);
+    // 2. Google 綁定 (Popup 模式 - 備用)
+    const handleLinkGooglePopup = async () => {
+        setIsLoading(true); setDebugMsg('');
+        const provider = new GoogleAuthProvider();
+        try {
+            await linkWithPopup(auth.currentUser, provider);
+            setIsLoading(false);
+            alert("綁定成功！(Popup)");
+        } catch (error) {
+            handleError(error, 'LinkPopup');
+        }
+    };
+
+    // 3. Google 登入 (Redirect 模式)
+    const handleLoginGoogleRedirect = async () => {
+        setIsLoading(true); setDebugMsg('');
         const provider = new GoogleAuthProvider();
         try {
             await signInWithRedirect(auth, provider);
         } catch (error) {
-            setIsLoading(false);
-            console.error("Login redirect error:", error);
-            alert(`[${error.code}] 登入啟動失敗：${error.message}`);
+            handleError(error, 'LoginRedirect');
+        }
+    };
+
+    // 4. Google 登入 (Popup 模式)
+    const handleLoginGooglePopup = async () => {
+        setIsLoading(true); setDebugMsg('');
+        const provider = new GoogleAuthProvider();
+        try {
+            await signInWithPopup(auth, provider);
+            setIsLoading(false); // 成功後會自動刷新，但先關掉 loading
+        } catch (error) {
+            handleError(error, 'LoginPopup');
         }
     };
 
@@ -410,27 +444,51 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     return (
         <div className="space-y-6">
             
-            {/* 新增：帳號安全卡片 */}
+            {/* 新增：帳號安全卡片 (v2.3 混合模式) */}
             <div className={`p-6 rounded-xl shadow-lg border ${user?.isAnonymous ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
-                <h3 className="text-xl font-bold text-gray-800 mb-2 flex items-center">
-                    {user?.isAnonymous ? <ShieldCheck className="w-5 h-5 mr-2 text-orange-500" /> : <ShieldCheck className="w-5 h-5 mr-2 text-green-600" />}
-                    帳號狀態：{user?.isAnonymous ? '訪客 (未備份)' : '已登入'}
+                <h3 className="text-xl font-bold text-gray-800 mb-2 flex items-center justify-between">
+                    <div className="flex items-center">
+                        {user?.isAnonymous ? <ShieldCheck className="w-5 h-5 mr-2 text-orange-500" /> : <ShieldCheck className="w-5 h-5 mr-2 text-green-600" />}
+                        帳號狀態：{user?.isAnonymous ? '訪客 (未備份)' : '已登入'}
+                    </div>
+                    <span className="text-xs text-gray-400 font-normal">v2.3</span>
                 </h3>
+                
+                {/* 顯示詳細除錯訊息 */}
+                {debugMsg && (
+                    <div className="mb-3 p-2 bg-red-100 border border-red-200 rounded text-xs text-red-700 whitespace-pre-wrap font-mono">
+                        {debugMsg}
+                    </div>
+                )}
+
                 {user?.isAnonymous ? (
                     <div className="space-y-3">
                         <p className="text-sm text-gray-600">
                             目前為訪客模式，在手機 App 版中會視為新使用者。
                         </p>
-                        <div className="grid grid-cols-1 gap-2">
-                            <button onClick={handleLinkGoogle} disabled={isLoading} className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors disabled:opacity-50">
-                                {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <ShieldCheck className="w-4 h-4 mr-2" />}
-                                {isLoading ? '轉跳中...' : '綁定目前資料到 Google (建立備份)'}
-                            </button>
-                            <div className="text-center text-xs text-gray-400 font-bold my-1">- 或 -</div>
-                            <button onClick={handleLoginGoogle} disabled={isLoading} className="w-full bg-indigo-600 text-white font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-indigo-700 transition-colors disabled:opacity-50">
-                                {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <LogIn className="w-4 h-4 mr-2" />}
-                                {isLoading ? '轉跳中...' : '切換至現有 Google 帳號 (找回舊資料)'}
-                            </button>
+                        
+                        <div className="flex flex-col gap-2">
+                            {/* 綁定備份區 */}
+                            <div className="text-xs font-bold text-gray-500 mt-2">綁定資料 (備份目前紀錄)</div>
+                            <div className="flex gap-2">
+                                <button onClick={handleLinkGoogleRedirect} disabled={isLoading} className="flex-1 bg-white border border-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 text-xs">
+                                    {isLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin"/> : <ShieldCheck className="w-3 h-3 mr-1" />} 方式A (轉跳)
+                                </button>
+                                <button onClick={handleLinkGooglePopup} disabled={isLoading} className="flex-1 bg-white border border-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 text-xs">
+                                    {isLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin"/> : <ShieldCheck className="w-3 h-3 mr-1" />} 方式B (彈窗)
+                                </button>
+                            </div>
+
+                            {/* 登入舊帳號區 */}
+                            <div className="text-xs font-bold text-gray-500 mt-2">登入 (找回舊資料)</div>
+                            <div className="flex gap-2">
+                                <button onClick={handleLoginGoogleRedirect} disabled={isLoading} className="flex-1 bg-indigo-600 text-white font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-indigo-700 text-xs">
+                                    {isLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin"/> : <LogIn className="w-3 h-3 mr-1" />} 登入 (轉跳)
+                                </button>
+                                <button onClick={handleLoginGooglePopup} disabled={isLoading} className="flex-1 bg-indigo-600 text-white font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-indigo-700 text-xs">
+                                    {isLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin"/> : <LogIn className="w-3 h-3 mr-1" />} 登入 (彈窗)
+                                </button>
+                            </div>
                         </div>
                     </div>
                 ) : (
@@ -490,7 +548,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             <div className="bg-white p-4 rounded-xl shadow-lg">
                 <div className="flex justify-between items-center mb-3 border-b pb-2">
                     <h3 className="text-lg font-bold text-gray-800">歷史紀錄</h3>
-                    <span className="text-xs text-gray-400">App 版本：v2.2 (Redirect Mode)</span>
                 </div>
                 {sortedMetrics.length === 0 ? <p className="text-center text-gray-500">無數據</p> : (
                     <table className="min-w-full text-sm"><thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left">日期</th><th>體重</th><th>體脂</th><th className="text-right">操作</th></tr></thead>
