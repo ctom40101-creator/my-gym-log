@@ -10,12 +10,12 @@ import {
   signInWithEmailAndPassword, 
   signOut, 
   sendPasswordResetEmail,
-  deleteUser // 引入刪除使用者功能
+  deleteUser 
 } from 'firebase/auth';
-import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -156,7 +156,7 @@ const RpeSelectorAlwaysVisible = ({ value, onChange }) => {
 // 6. 動作編輯器 (AI Prompt 複製功能)
 const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
     const types = ['推', '拉', '腿', '核心'];
-    const bodyParts = ['胸', '背', '腿', '肩', '核心', '手臂', '全身']; 
+    const bodyParts = ['胸', '背', '腿', '肩', '手臂', '核心', '全身']; 
     
     const aiPrompt = data.name ? `${data.name}確認英文名稱為何，並且告訴我動作類型為何(推、拉、腿、核心)，訓練部位(胸、背、腿、肩、核心、手臂、全身)以及告訴我主要肌群與協同肌群各自為何，並且告訴我這個動作的提示與要點` : '';
 
@@ -624,9 +624,80 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
 const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
     const [filter, setFilter] = useState('');
     const [isEditing, setIsEditing] = useState(false);
+    const [isBatchMode, setIsBatchMode] = useState(false); // 新增：批次模式
+    const [selectedItems, setSelectedItems] = useState(new Set()); // 新增：已選項目
     const [editingMove, setEditingMove] = useState(null); 
-    const types = ['推', '拉', '腿', '核心'];
-    const filteredMovements = movementDB.filter(m => (!filter || m.type === filter || m.name.includes(filter)));
+    
+    // LibraryScreen: Update filter buttons to body parts
+    const categories = ['胸', '背', '腿', '肩', '手臂', '核心'];
+    // Filter logic: Check m.bodyPart
+    const filteredMovements = movementDB.filter(m => (!filter || m.bodyPart === filter || m.name.includes(filter)));
+
+    // 新增：切換選取
+    const toggleSelection = (id) => {
+        const newSet = new Set(selectedItems);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedItems(newSet);
+    };
+
+    // 新增：全選/取消全選
+    const toggleSelectAll = () => {
+        if (selectedItems.size === filteredMovements.length) {
+            setSelectedItems(new Set());
+        } else {
+            setSelectedItems(new Set(filteredMovements.map(m => m.id)));
+        }
+    };
+
+    // 新增：批次刪除
+    const handleBatchDelete = async () => {
+        if (!confirm(`確定要刪除選取的 ${selectedItems.size} 個動作嗎？`)) return;
+        const batch = writeBatch(db);
+        selectedItems.forEach(id => {
+            const ref = doc(db, `artifacts/${appId}/public/data/MovementDB`, id);
+            batch.delete(ref);
+        });
+        await batch.commit();
+        setIsBatchMode(false);
+        setSelectedItems(new Set());
+    };
+
+    // 新增：CSV 匯入
+    const handleImportCSV = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            const text = event.target.result;
+            const rows = text.split('\n').slice(1); // 假設第一行是標題
+            const batch = writeBatch(db);
+            let count = 0;
+            rows.forEach(row => {
+                const cols = row.split(',');
+                if (cols.length >= 2) { // 至少要有 Name 和 Type
+                    const name = cols[0]?.trim();
+                    if (name) {
+                        const ref = doc(db, `artifacts/${appId}/public/data/MovementDB`, name);
+                        batch.set(ref, {
+                            name: name,
+                            type: cols[1]?.trim() || '',
+                            bodyPart: cols[2]?.trim() || '',
+                            mainMuscle: cols[3]?.trim() || '',
+                            secondaryMuscle: cols[4]?.trim() || '',
+                            tips: cols[5]?.trim() || '',
+                            link: cols[6]?.trim() || '',
+                            initialWeight: Number(cols[7]?.trim()) || 20
+                        });
+                        count++;
+                    }
+                }
+            });
+            await batch.commit();
+            alert(`成功匯入 ${count} 個動作！`);
+        };
+        reader.readAsText(file);
+    };
     
     const handleSaveMovement = async () => {
         if (!db || !editingMove.name) return;
@@ -638,18 +709,56 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
     return (
         <>
             <MovementEditor isOpen={isEditing} onClose={() => setIsEditing(false)} onSave={handleSaveMovement} data={editingMove || {}} onChange={(f, v) => setEditingMove(p => ({ ...p, [f]: v }))} />
-            <button onClick={() => {setEditingMove({ name: '', type: '', bodyPart: '', mainMuscle: '', secondaryMuscle: '', tips: '', link: '', initialWeight: 20 }); setIsEditing(true);}} className="w-full bg-teal-500 text-white font-bold py-3 rounded-xl shadow-lg mb-4 flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>新增自定義動作</button>
-            <div className="flex justify-between space-x-2 mb-4 overflow-x-auto"><button onClick={() => setFilter('')} className={`p-2 rounded-full text-sm font-semibold whitespace-nowrap ${!filter ? 'bg-indigo-600 text-white' : 'bg-white'}`}>全部</button>{types.map(t => <button key={t} onClick={() => setFilter(t)} className={`p-2 rounded-full text-sm font-semibold whitespace-nowrap ${filter === t ? 'bg-indigo-600 text-white' : 'bg-white'}`}>{t}</button>)}</div>
+            
+            <div className="flex gap-2 mb-4">
+                <button onClick={() => {setEditingMove({ name: '', type: '', bodyPart: '', mainMuscle: '', secondaryMuscle: '', tips: '', link: '', initialWeight: 20 }); setIsEditing(true);}} className="flex-1 bg-teal-500 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>新增動作</button>
+                <button onClick={() => setIsBatchMode(!isBatchMode)} className={`px-4 rounded-xl font-bold border ${isBatchMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-600'}`}>{isBatchMode ? '完成' : '管理'}</button>
+            </div>
+
+            {/* 匯入區塊 (僅在管理模式顯示) */}
+            {isBatchMode && (
+                <div className="bg-gray-100 p-3 rounded-xl mb-4 flex justify-between items-center animate-fade-in">
+                    <div className="flex items-center gap-2">
+                        <label className="cursor-pointer bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-gray-50">
+                            <Upload className="w-3 h-3 mr-1" /> 匯入 CSV
+                            <input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} />
+                        </label>
+                        <span className="text-[10px] text-gray-400">格式: 名稱,類型,部位...</span>
+                    </div>
+                    {selectedItems.size > 0 && (
+                        <button onClick={handleBatchDelete} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center">
+                            <Trash2 className="w-3 h-3 mr-1" /> 刪除 ({selectedItems.size})
+                        </button>
+                    )}
+                </div>
+            )}
+
+            <div className="flex justify-between space-x-2 mb-4 overflow-x-auto"><button onClick={() => setFilter('')} className={`p-2 rounded-full text-sm font-semibold whitespace-nowrap ${!filter ? 'bg-indigo-600 text-white' : 'bg-white'}`}>全部</button>{categories.map(t => <button key={t} onClick={() => setFilter(t)} className={`p-2 rounded-full text-sm font-semibold whitespace-nowrap ${filter === t ? 'bg-indigo-600 text-white' : 'bg-white'}`}>{t}</button>)}</div>
+            
+            {/* 全選按鈕 */}
+            {isBatchMode && (
+                <div className="flex items-center mb-2 px-1" onClick={toggleSelectAll}>
+                     {selectedItems.size === filteredMovements.length && filteredMovements.length > 0 ? <CheckSquare className="w-5 h-5 text-indigo-600 mr-2"/> : <Square className="w-5 h-5 text-gray-400 mr-2"/>}
+                     <span className="text-sm font-bold text-gray-600">全選本頁</span>
+                </div>
+            )}
+
             <div className="space-y-3">{filteredMovements.map(move => {
                 const record = weightHistory[move.name]?.absoluteBest;
                 return (
-                    <div key={move.id} className="bg-white p-4 rounded-xl shadow-lg border border-indigo-100">
-                        <div className="flex justify-between items-start"><h3 className="text-xl font-bold text-gray-800">{move.name}</h3>{record && <div className="flex items-center bg-yellow-50 px-2 py-1 rounded-md border border-yellow-200"><Crown className="w-3 h-3 text-yellow-600 mr-1" /><span className="text-xs font-bold text-yellow-700">PR: {record.weight}kg x {record.reps}</span></div>}</div>
-                        <div className="text-sm mt-1 mb-2 flex justify-between items-center">
-                            <div><span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 mr-2">{move.type}</span><span className="text-gray-600">{move.bodyPart} - {move.mainMuscle}</span></div>
-                            <div className="flex space-x-2"><button onClick={() => {setEditingMove(move); setIsEditing(true);}} className="text-indigo-500 p-1"><Edit className="w-5 h-5"/></button><button onClick={() => handleDeleteMovement(move.id, move.name)} className="text-red-500 p-1"><Trash2 className="w-5 h-5"/></button></div>
+                    <div key={move.id} className={`bg-white p-4 rounded-xl shadow-lg border transition-all ${isBatchMode && selectedItems.has(move.id) ? 'border-indigo-500 bg-indigo-50' : 'border-indigo-100'}`} onClick={() => isBatchMode && toggleSelection(move.id)}>
+                        <div className="flex justify-between items-start">
+                            <div className="flex items-center">
+                                {isBatchMode && (selectedItems.has(move.id) ? <CheckSquare className="w-5 h-5 text-indigo-600 mr-3 shrink-0"/> : <Square className="w-5 h-5 text-gray-300 mr-3 shrink-0"/>)}
+                                <h3 className="text-xl font-bold text-gray-800">{move.name}</h3>
+                            </div>
+                            {!isBatchMode && record && <div className="flex items-center bg-yellow-50 px-2 py-1 rounded-md border border-yellow-200"><Crown className="w-3 h-3 text-yellow-600 mr-1" /><span className="text-xs font-bold text-yellow-700">PR: {record.weight}kg x {record.reps}</span></div>}
                         </div>
-                        <details className="text-gray-600 border-t pt-2 mt-2"><summary className="font-semibold cursor-pointer">動作提示</summary><p className="mt-2 text-sm">{move.tips}</p>{move.secondaryMuscle && <p className="text-xs text-gray-500 mt-1">協同: {move.secondaryMuscle}</p>}</details>
+                        <div className="text-sm mt-1 mb-2 flex justify-between items-center pl-8">
+                            <div><span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 mr-2">{move.type}</span><span className="text-gray-600">{move.bodyPart} - {move.mainMuscle}</span></div>
+                            {!isBatchMode && <div className="flex space-x-2"><button onClick={(e) => {e.stopPropagation(); setEditingMove(move); setIsEditing(true);}} className="text-indigo-500 p-1"><Edit className="w-5 h-5"/></button><button onClick={(e) => {e.stopPropagation(); handleDeleteMovement(move.id, move.name);}} className="text-red-500 p-1"><Trash2 className="w-5 h-5"/></button></div>}
+                        </div>
+                        {!isBatchMode && <details className="text-gray-600 border-t pt-2 mt-2 pl-8"><summary className="font-semibold cursor-pointer">動作提示</summary><p className="mt-2 text-sm">{move.tips}</p>{move.secondaryMuscle && <p className="text-xs text-gray-500 mt-1">協同: {move.secondaryMuscle}</p>}</details>}
                     </div>
                 );
             })}</div>
@@ -664,6 +773,12 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
     const [planMovements, setPlanMovements] = useState([]);
     const [tempSelectedMove, setTempSelectedMove] = useState('');
     
+    // MenuScreen: Batch Mode & Filter
+    const [isBatchMode, setIsBatchMode] = useState(false);
+    const [selectedItems, setSelectedItems] = useState(new Set());
+    const [filterBodyPart, setFilterBodyPart] = useState('');
+    const bodyParts = ['胸', '背', '腿', '肩', '手臂', '核心', '全身'];
+
     useEffect(() => {
         const plan = editingPlanId ? plansDB.find(p => p.id === editingPlanId) : null;
         setPlanName(plan ? plan.name : '');
@@ -690,17 +805,81 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
     };
     const handleDelete = async (id) => { if(confirm('刪除?')) await deleteDoc(doc(db, `artifacts/${appId}/public/data/PlansDB`, id)); };
 
+    // Batch Delete for Menu
+    const toggleSelection = (id) => {
+        const newSet = new Set(selectedItems);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedItems(newSet);
+    };
+
+    const handleBatchDelete = async () => {
+        if (!confirm(`確定要刪除選取的 ${selectedItems.size} 個菜單嗎？`)) return;
+        const batch = writeBatch(db);
+        selectedItems.forEach(id => {
+            const ref = doc(db, `artifacts/${appId}/public/data/PlansDB`, id);
+            batch.delete(ref);
+        });
+        await batch.commit();
+        setIsBatchMode(false);
+        setSelectedItems(new Set());
+    };
+
+    // MenuScreen: Filter movements based on selected body part
+    const filteredMovementsForMenu = filterBodyPart
+        ? movementDB.filter(m => m.bodyPart === filterBodyPart)
+        : movementDB;
+
     if (isCreating || editingPlanId) {
         return (
             <div className="space-y-4">
                 <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-md"><input type="text" value={planName} onChange={(e) => setPlanName(e.target.value)} className="text-xl font-bold w-2/3 p-2 border-b-2 outline-none" placeholder="菜單名稱" /><div className="flex space-x-2"><button onClick={() => {setEditingPlanId(null); setIsCreating(false);}} className="p-2 bg-gray-200 rounded-full"><X className="w-5 h-5"/></button><button onClick={handleSave} className="p-2 bg-indigo-600 text-white rounded-full"><Save className="w-5 h-5"/></button></div></div>
                 <div className="space-y-3">{planMovements.map((m, i) => (<div key={i} className="flex items-center space-x-3 bg-white p-3 rounded-xl shadow-sm"><div className="flex-grow font-bold">{m.name}</div><input type="number" value={m.sets} onChange={(e)=>handleMovementUpdate(i, 'sets', e.target.value)} className="w-12 p-1 border rounded text-center"/>x<input type="number" value={m.targetReps} onChange={(e)=>handleMovementUpdate(i, 'targetReps', e.target.value)} className="w-12 p-1 border rounded text-center"/><button onClick={()=>setPlanMovements(planMovements.filter((_,idx)=>idx!==i))} className="text-red-500"><Trash2 className="w-5 h-5"/></button></div>))}</div>
-                <div className="bg-white p-4 rounded-xl shadow-md border-t"><h4 className="font-bold mb-2">新增動作</h4><select value={tempSelectedMove} onChange={(e)=>{addMovementToPlan(e.target.value); setTempSelectedMove('');}} className="w-full p-2 border rounded-lg"><option value="" disabled>-- 選擇動作 --</option>{movementDB.map(m=><option key={m.id} value={m.name}>{m.name}</option>)}</select></div>
+                <div className="bg-white p-4 rounded-xl shadow-md border-t">
+                    <h4 className="font-bold mb-2">新增動作</h4>
+                    {/* MenuScreen: Body Part Filter Dropdown */}
+                    <div className="mb-2">
+                         <select value={filterBodyPart} onChange={(e) => setFilterBodyPart(e.target.value)} className="w-full p-2 border rounded-lg bg-gray-50 text-sm">
+                            <option value="">全部部位</option>
+                            {bodyParts.map(bp => <option key={bp} value={bp}>{bp}</option>)}
+                        </select>
+                    </div>
+                    <select value={tempSelectedMove} onChange={(e)=>{addMovementToPlan(e.target.value); setTempSelectedMove('');}} className="w-full p-2 border rounded-lg"><option value="" disabled>-- 選擇動作 --</option>{filteredMovementsForMenu.map(m=><option key={m.id} value={m.name}>{m.name}</option>)}</select>
+                </div>
             </div>
         );
     }
     return (
-        <div className="space-y-4"><button onClick={() => setIsCreating(true)} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>創建菜單</button>{plansDB.map(p => (<div key={p.id} className={`bg-white p-4 rounded-xl shadow-lg ${selectedDailyPlanId===p.id?'border-4 border-indigo-400':''}`}><div className="flex justify-between items-start mb-2"><div><h3 className="text-xl font-bold">{p.name}</h3>{selectedDailyPlanId===p.id?<span className="text-xs bg-indigo-600 text-white px-2 py-0.5 rounded-full">今日使用</span>:<button onClick={()=>setSelectedDailyPlanId(p.id)} className="text-sm text-indigo-500">選為今日</button>}</div><div className="flex space-x-2"><button onClick={()=>setEditingPlanId(p.id)} className="text-gray-500"><Edit className="w-5 h-5"/></button><button onClick={()=>handleDelete(p.id)} className="text-red-500"><Trash2 className="w-5 h-5"/></button></div></div><p className="text-sm text-gray-600 mt-2 border-t pt-2">{p.movements?.slice(0,3).map(m=>m.name).join('、')}...</p></div>))}</div>
+        <div className="space-y-4">
+            <div className="flex gap-2">
+                <button onClick={() => setIsCreating(true)} className="flex-1 bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>創建菜單</button>
+                <button onClick={() => setIsBatchMode(!isBatchMode)} className={`px-4 rounded-xl font-bold border ${isBatchMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-600'}`}>{isBatchMode ? '完成' : '管理'}</button>
+            </div>
+
+            {isBatchMode && selectedItems.size > 0 && (
+                <div className="bg-gray-100 p-2 rounded-lg flex justify-end animate-fade-in">
+                     <button onClick={handleBatchDelete} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center">
+                        <Trash2 className="w-3 h-3 mr-1" /> 刪除 ({selectedItems.size})
+                    </button>
+                </div>
+            )}
+
+            {plansDB.map(p => (
+                <div key={p.id} className={`bg-white p-4 rounded-xl shadow-lg border transition-all ${isBatchMode && selectedItems.has(p.id) ? 'border-indigo-500 bg-indigo-50' : (selectedDailyPlanId===p.id?'border-4 border-indigo-400':'')}`} onClick={() => isBatchMode && toggleSelection(p.id)}>
+                    <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center">
+                             {isBatchMode && (selectedItems.has(p.id) ? <CheckSquare className="w-5 h-5 text-indigo-600 mr-3 shrink-0"/> : <Square className="w-5 h-5 text-gray-300 mr-3 shrink-0"/>)}
+                            <div>
+                                <h3 className="text-xl font-bold">{p.name}</h3>
+                                {!isBatchMode && (selectedDailyPlanId===p.id?<span className="text-xs bg-indigo-600 text-white px-2 py-0.5 rounded-full">今日使用</span>:<button onClick={(e)=>{e.stopPropagation(); setSelectedDailyPlanId(p.id);}} className="text-sm text-indigo-500">選為今日</button>)}
+                            </div>
+                        </div>
+                        {!isBatchMode && <div className="flex space-x-2"><button onClick={(e)=>{e.stopPropagation(); setEditingPlanId(p.id);}} className="text-gray-500"><Edit className="w-5 h-5"/></button><button onClick={(e)=>{e.stopPropagation(); handleDelete(p.id);}} className="text-red-500"><Trash2 className="w-5 h-5"/></button></div>}
+                    </div>
+                    <p className="text-sm text-gray-600 mt-2 border-t pt-2 pl-8">{p.movements?.slice(0,3).map(m=>m.name).join('、')}...</p>
+                </div>
+            ))}
+        </div>
     );
 };
 
@@ -882,17 +1061,25 @@ const App = () => {
 const ScreenContainer = ({ children, title }) => (
     <div className="flex flex-col h-full bg-gray-50 p-4 pt-8 overflow-y-auto">
         <h1 className="text-3xl font-extrabold text-gray-900 mb-6 border-b-2 border-indigo-200 pb-2 flex items-center">{title}</h1>
-        <div className="pb-20">{children}</div>
+        <div className="pb-32">{children}</div>
     </div>
 );
 const NavMenu = ({ screen, setScreen }) => (
-    <div className="fixed bottom-0 w-full bg-white border-t p-2 flex justify-around shadow-2xl z-50">
+    <div className="fixed bottom-0 w-full bg-white border-t border-gray-200 pb-6 pt-3 px-2 flex justify-around shadow-[0_-5px_10px_rgba(0,0,0,0.05)] z-50">
         {[
-            { id: 'Log', icon: NotebookText, label: '紀錄' }, { id: 'Menu', icon: ListChecks, label: '菜單' },
-            { id: 'Library', icon: Dumbbell, label: '動作庫' }, { id: 'Analysis', icon: BarChart3, label: '分析' }, { id: 'Profile', icon: User, label: '個人' }
+            { id: 'Log', icon: NotebookText, label: '紀錄' },
+            { id: 'Menu', icon: ListChecks, label: '菜單' },
+            { id: 'Library', icon: Dumbbell, label: '動作庫' },
+            { id: 'Analysis', icon: BarChart3, label: '分析' },
+            { id: 'Profile', icon: User, label: '個人' }
         ].map(i => (
-            <button key={i.id} onClick={() => setScreen(i.id)} className={`flex flex-col items-center ${screen===i.id?'text-indigo-600':'text-gray-400'}`}>
-                <i.icon className="w-6 h-6" /><span className="text-xs">{i.label}</span>
+            <button 
+                key={i.id} 
+                onClick={() => setScreen(i.id)} 
+                className={`flex flex-col items-center justify-center flex-1 py-1 active:scale-95 transition-all ${screen===i.id?'text-indigo-600':'text-gray-400'}`}
+            >
+                <i.icon className="w-8 h-8 mb-1" strokeWidth={screen===i.id ? 2.5 : 2} />
+                <span className="text-xs font-bold">{i.label}</span>
             </button>
         ))}
     </div>
