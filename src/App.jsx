@@ -15,7 +15,7 @@ import {
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -626,6 +626,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [isBatchMode, setIsBatchMode] = useState(false); // 新增：批次模式
     const [selectedItems, setSelectedItems] = useState(new Set()); // 新增：已選項目
+    const [lastImportedIds, setLastImportedIds] = useState([]); // 新增：上一次匯入的 IDs (用於復原)
     const [editingMove, setEditingMove] = useState(null); 
     
     // LibraryScreen: Update filter buttons to body parts
@@ -663,12 +664,34 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
         setSelectedItems(new Set());
     };
 
-    // 新增：下載範例 CSV
+    // 新增：復原上一次匯入
+    const handleUndoImport = async () => {
+        if (lastImportedIds.length === 0) return;
+        if (!confirm(`確定要復原 (刪除) 剛剛匯入的 ${lastImportedIds.length} 個動作嗎？`)) return;
+        
+        const batch = writeBatch(db);
+        lastImportedIds.forEach(id => {
+            const ref = doc(db, `artifacts/${appId}/public/data/MovementDB`, id);
+            batch.delete(ref);
+        });
+        
+        try {
+            await batch.commit();
+            setLastImportedIds([]); // 清空紀錄
+            alert("已復原上一次匯入！");
+        } catch (error) {
+            console.error("Undo failed:", error);
+            alert("復原失敗，請稍後再試。");
+        }
+    };
+
+    // 新增：下載範例 CSV (加雙引號 & BOM)
     const handleDownloadSampleCSV = () => {
         const headers = "名稱,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量\n";
-        const sampleRow1 = "範例臥推,推,胸,胸大肌,三頭肌,保持背部挺直,,20\n";
-        const sampleRow2 = "範例深蹲,腿,腿,股四頭肌,臀大肌,膝蓋對準腳尖,,20";
-        // 加入 BOM (\uFEFF) 以解決 Excel 中文亂碼問題
+        // 範例資料加上引號，避免逗號衝突
+        const sampleRow1 = `"範例臥推","推","胸","胸大肌","三頭肌","保持背部挺直, 不要聳肩","",20\n`;
+        const sampleRow2 = `"範例深蹲","腿","腿","股四頭肌","臀大肌","膝蓋對準腳尖","",20`;
+        
         const blob = new Blob(["\uFEFF" + headers + sampleRow1 + sampleRow2], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -679,19 +702,48 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
         document.body.removeChild(link);
     };
 
-    // 新增：CSV 匯入
+    // 新增：CSV 匯入 (增強版解析)
     const handleImportCSV = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
         const reader = new FileReader();
+        
         reader.onload = async (event) => {
             const text = event.target.result;
-            const rows = text.split('\n').slice(1); // 假設第一行是標題
+            const rows = text.split(/\r?\n/).slice(1); // 兼容 Windows 換行
             const batch = writeBatch(db);
             let count = 0;
+            const newIds = []; // 暫存這批 ID
+
+            // 簡單的 CSV 解析器 (處理引號)
+            const parseCSVRow = (row) => {
+                const result = [];
+                let current = '';
+                let inQuote = false;
+                for(let i=0; i<row.length; i++) {
+                    const char = row[i];
+                    if(char === '"') {
+                        if(inQuote && row[i+1] === '"') { // 處理轉義引號
+                            current += '"';
+                            i++;
+                        } else {
+                            inQuote = !inQuote;
+                        }
+                    } else if(char === ',' && !inQuote) {
+                        result.push(current.trim());
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                result.push(current.trim());
+                return result;
+            };
+
             rows.forEach(row => {
-                const cols = row.split(',');
-                if (cols.length >= 2) { // 至少要有 Name 和 Type
+                if (!row.trim()) return; // 跳過空行
+                const cols = parseCSVRow(row);
+                if (cols.length >= 2) { 
                     const name = cols[0]?.trim();
                     if (name) {
                         const ref = doc(db, `artifacts/${appId}/public/data/MovementDB`, name);
@@ -706,13 +758,26 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
                             initialWeight: Number(cols[7]?.trim()) || 20
                         });
                         count++;
+                        newIds.push(name);
                     }
                 }
             });
-            await batch.commit();
-            alert(`成功匯入 ${count} 個動作！`);
+
+            if (count > 0) {
+                try {
+                    await batch.commit();
+                    setLastImportedIds(newIds); // 成功後記住這批 ID
+                    alert(`成功匯入 ${count} 個動作！\n如果不滿意，可以點擊「復原」按鈕撤銷。`);
+                } catch (error) {
+                    console.error("Import failed:", error);
+                    alert("匯入失敗，請檢查檔案格式。");
+                }
+            } else {
+                alert("檔案中沒有有效的資料列。");
+            }
         };
         reader.readAsText(file);
+        e.target.value = null; // 重置 input 讓同檔名可再選
     };
     
     const handleSaveMovement = async () => {
@@ -734,24 +799,39 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
             {/* 匯入區塊 (僅在管理模式顯示) */}
             {isBatchMode && (
                 <div className="bg-gray-100 p-3 rounded-xl mb-4 animate-fade-in">
-                    <div className="flex justify-between items-center mb-2">
-                        <div className="flex gap-2">
-                             <label className="cursor-pointer bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-gray-50">
-                                <Upload className="w-3 h-3 mr-1" /> 匯入 CSV
-                                <input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} />
-                            </label>
-                            <button onClick={handleDownloadSampleCSV} className="bg-white border border-indigo-200 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-indigo-50">
-                                <FileSpreadsheet className="w-3 h-3 mr-1" /> 下載範例
-                            </button>
+                    <div className="flex flex-col gap-3">
+                        <div className="flex justify-between items-center">
+                            <div className="flex gap-2">
+                                 <label className="cursor-pointer bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-gray-50">
+                                    <Upload className="w-3 h-3 mr-1" /> 匯入 CSV
+                                    <input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} />
+                                </label>
+                                <button onClick={handleDownloadSampleCSV} className="bg-white border border-indigo-200 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-indigo-50">
+                                    <Download className="w-3 h-3 mr-1" /> 下載範例
+                                </button>
+                            </div>
+                            
+                            {/* 復原按鈕 (只有剛匯入後才會出現) */}
+                            {lastImportedIds.length > 0 && (
+                                <button onClick={handleUndoImport} className="bg-yellow-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center shadow-sm animate-pulse">
+                                    <Undo2 className="w-3 h-3 mr-1" /> 復原匯入
+                                </button>
+                            )}
                         </div>
+                        
+                        {/* 刪除按鈕 */}
                         {selectedItems.size > 0 && (
-                            <button onClick={handleBatchDelete} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center">
-                                <Trash2 className="w-3 h-3 mr-1" /> 刪除 ({selectedItems.size})
-                            </button>
+                            <div className="flex justify-end">
+                                <button onClick={handleBatchDelete} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center">
+                                    <Trash2 className="w-3 h-3 mr-1" /> 刪除 ({selectedItems.size})
+                                </button>
+                            </div>
                         )}
-                    </div>
-                    <div className="text-[10px] text-gray-400 px-1">
-                        格式順序: 名稱, 類型, 部位, 主要肌群, 協同肌群, 提示, 影片連結, 初始重量
+                        
+                        <div className="text-[10px] text-gray-400 px-1 border-t pt-2 mt-1">
+                            欄位順序: 名稱, 類型, 部位, 主要肌群, 協同肌群, 提示, 影片連結, 初始重量<br/>
+                            (若內容包含逗號，請用雙引號包起來，例如 "提示1, 提示2")
+                        </div>
                     </div>
                 </div>
             )}
