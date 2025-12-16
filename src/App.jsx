@@ -167,7 +167,7 @@ const RpeSelectorAlwaysVisible = ({ value, onChange }) => {
     );
 };
 
-// 6. 動作編輯器 (AI Prompt 複製功能)
+// 6. 動作編輯器 (AI Prompt 複製功能 + 必填驗證)
 const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
     const types = ['推', '拉', '腿', '核心'];
     const bodyParts = ['胸', '背', '腿', '肩', '手臂', '核心', '全身']; 
@@ -197,14 +197,14 @@ const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
                 <div className="space-y-4 mt-4">
                     {/* 動作名稱 */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">動作名稱</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">動作名稱 <span className="text-red-500">*</span></label>
                         <input type="text" value={data.name} onChange={(e) => onChange('name', e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:border-indigo-500 font-medium" disabled={!!data.id} placeholder="例如：寬握槓片划船" />
                     </div>
 
                     {/* 1. 類型 */}
                     <div className="flex gap-3 items-end">
                         <div className="flex-grow">
-                            <label className="block text-xs font-bold text-gray-500 mb-1">類型</label>
+                            <label className="block text-xs font-bold text-gray-500 mb-1">類型 <span className="text-red-500">*</span></label>
                             <select value={data.type || ''} onChange={(e) => onChange('type', e.target.value)} className="w-full p-2.5 border border-gray-300 rounded-lg bg-white">
                                 <option value="" disabled>-- 請選擇 --</option>
                                 {types.map(t => <option key={t} value={t}>{t}</option>)}
@@ -215,7 +215,7 @@ const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
                     {/* 2. 部位 */}
                     <div className="flex gap-3 items-end">
                         <div className="flex-grow">
-                            <label className="block text-xs font-bold text-gray-500 mb-1">訓練部位</label>
+                            <label className="block text-xs font-bold text-gray-500 mb-1">訓練部位 <span className="text-red-500">*</span></label>
                             <select value={data.bodyPart || ''} onChange={(e) => onChange('bodyPart', e.target.value)} className="w-full p-2.5 border border-gray-300 rounded-lg bg-white">
                                 <option value="" disabled>-- 請選擇 --</option>
                                 {bodyParts.map(t => <option key={t} value={t}>{t}</option>)}
@@ -293,7 +293,7 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - v3.2 (移除救援功能)
+// 新增：個人頁面 (ProfileScreen) - v3.3 (移除資料救援功能)
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
@@ -663,7 +663,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         fetchNickname();
     }, [userId, db, appId]);
 
-    // Import Mode State
+    // Import Mode State (預設為「一般匯入」，可切換為「保留來源註記」)
     const [importWithNickname, setImportWithNickname] = useState(false);
 
     const categories = ['胸', '背', '腿', '肩', '手臂', '核心', '全身'];
@@ -716,7 +716,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         }
     };
     
-    // 匯出 CSV (含暱稱)
+    // 匯出 CSV (新版：第一欄固定為暱稱)
     const handleExportCSV = () => {
         // 新版格式：暱稱, 名稱...
         const headers = "暱稱,名稱,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量\n";
@@ -750,7 +750,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         document.body.removeChild(link);
     };
 
-    // 匯入 CSV (支援新舊格式 + 暱稱處理)
+    // 匯入 CSV (支援新舊格式 + 暱稱處理 + 必填驗證)
     const handleImportCSV = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -761,6 +761,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
             const rows = text.split(/\r?\n/).slice(1); 
             const batch = writeBatch(db);
             let count = 0;
+            let skippedCount = 0; // 新增：略過筆數統計
             const newIds = []; 
 
             const parseCSVRow = (row) => {
@@ -796,18 +797,23 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
                 let name = '';
                 let dataStartIdx = 0;
 
-                if (cols.length >= 9) { // 新版格式
+                if (cols.length >= 9) { // 新版格式 (有暱稱欄位)
                     sourceNickname = cols[0];
                     name = cols[1];
                     dataStartIdx = 1;
-                } else if (cols.length >= 8) { // 舊版格式
+                } else if (cols.length >= 8) { // 舊版格式 (無暱稱)
                     name = cols[0];
                     dataStartIdx = 0;
                 } else {
-                    return; // 格式錯誤
+                    skippedCount++; // 格式錯誤直接略過
+                    return; 
                 }
 
-                if (name) {
+                // 必填欄位驗證：名稱、類型、部位
+                const type = cols[dataStartIdx+1]?.trim();
+                const bodyPart = cols[dataStartIdx+2]?.trim();
+
+                if (name && type && bodyPart) {
                     // 根據模式決定名稱
                     let finalName = name;
                     if (importWithNickname && sourceNickname) {
@@ -817,8 +823,8 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
                     const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, finalName); 
                     batch.set(ref, {
                         name: finalName,
-                        type: cols[dataStartIdx+1]?.trim() || '',
-                        bodyPart: cols[dataStartIdx+2]?.trim() || '',
+                        type: type,
+                        bodyPart: bodyPart,
                         mainMuscle: cols[dataStartIdx+3]?.trim() || '',
                         secondaryMuscle: cols[dataStartIdx+4]?.trim() || '',
                         tips: cols[dataStartIdx+5]?.trim() || '',
@@ -827,6 +833,8 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
                     });
                     count++;
                     newIds.push(finalName);
+                } else {
+                    skippedCount++; // 必填欄位有空值，略過
                 }
             });
 
@@ -834,21 +842,35 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
                 try {
                     await batch.commit();
                     setLastImportedIds(newIds); 
-                    alert(`成功匯入 ${count} 個動作！\n如果不滿意，可以點擊「復原」按鈕撤銷。`);
+                    let msg = `成功匯入 ${count} 個動作！\n如果不滿意，可以點擊「復原」按鈕撤銷。`;
+                    if (skippedCount > 0) {
+                        msg += `\n注意：有 ${skippedCount} 筆資料因欄位不全（名稱/類型/部位為空）而略過。`;
+                    }
+                    alert(msg);
                 } catch (error) {
                     console.error("Import failed:", error);
                     alert("匯入失敗，請檢查檔案格式。");
                 }
             } else {
-                alert("檔案中沒有有效的資料列。");
+                if (skippedCount > 0) {
+                    alert(`所有資料 (${skippedCount} 筆) 皆因欄位不全而無法匯入。`);
+                } else {
+                    alert("檔案中沒有有效的資料列。");
+                }
             }
         };
         reader.readAsText(file);
         e.target.value = null; 
     };
     
+    // 手動儲存驗證
     const handleSaveMovement = async () => {
-        if (!db || !editingMove.name) return;
+        if (!db) return;
+        // Validation
+        if (!editingMove.name?.trim()) return alert("請輸入動作名稱");
+        if (!editingMove.type) return alert("請選擇動作類型");
+        if (!editingMove.bodyPart) return alert("請選擇訓練部位");
+
         const docId = editingMove.id || editingMove.name.trim(); 
         try { await setDoc(doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, docId), { ...editingMove, initialWeight: Number(editingMove.initialWeight||20) }); setIsEditing(false); setEditingMove(null); if (!editingMove.id) setFilter(''); } catch(e) { console.error(e); }
     };
@@ -881,7 +903,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
                             
                             <div className="flex items-center gap-2 mb-1">
                                 <input type="checkbox" id="importNick" checked={importWithNickname} onChange={e=>setImportWithNickname(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" />
-                                <label htmlFor="importNick" className="text-xs text-gray-600">若 CSV 包含暱稱，動作名稱加上 (來自 XXX)</label>
+                                <label htmlFor="importNick" className="text-xs text-gray-600">保留來源註記 (來自 XXX)</label>
                             </div>
 
                             <div className="flex gap-2">
