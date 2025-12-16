@@ -4,7 +4,7 @@ import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, 
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -268,7 +268,7 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - 支援編輯與刪除 + 生涯天數設定 + Google 綁定與登入 (Redirect 版 + 詳細錯誤碼)
+// 新增：個人頁面 (ProfileScreen) - v2.4 PWA 優化版 (Popup First)
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
@@ -276,7 +276,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const today = new Date().toISOString().substring(0, 10);
     const [date, setDate] = useState(today);
     const [isLoading, setIsLoading] = useState(false); 
-    const [debugMsg, setDebugMsg] = useState(''); // 新增：除錯訊息顯示
+    const [debugMsg, setDebugMsg] = useState('');
 
     // 新增：生涯設定
     const [startDate, setStartDate] = useState('');
@@ -284,6 +284,11 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     
     // 新增：使用者狀態
     const [user, setUser] = useState(auth?.currentUser);
+
+    // 偵測是否為 App 模式 (PWA Standalone)
+    const isPWA = useMemo(() => {
+        return (window.matchMedia('(display-mode: standalone)').matches) || (window.navigator.standalone) || document.referrer.includes('android-app://');
+    }, []);
 
     useEffect(() => {
         if(auth) {
@@ -304,55 +309,34 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
              alert(`[${error.code}] 功能未開啟：請確認 Firebase Console > Authentication > Sign-in method 已啟用 Google。`);
         } else if (error.code === 'auth/unauthorized-domain') {
              alert(`[${error.code}] 網域未授權：請至 Firebase Console 新增 ${window.location.hostname}`);
-        } else if (error.code === 'auth/popup-blocked') {
-             alert(`[${error.code}] 視窗被阻擋：請允許彈出視窗，或改用 Redirect 模式。`);
+        } else if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
+             alert(`[${error.code}] 登入視窗已關閉或被阻擋。請重試。`);
         } else {
              alert(`[${error.code}] 失敗：${error.message}`);
         }
     };
 
-    // 1. Google 綁定 (Redirect 模式 - 推薦手機)
-    const handleLinkGoogleRedirect = async () => {
+    // 統一入口：綁定 Google (預設 Popup)
+    const handleLinkGoogle = async () => {
         setIsLoading(true); setDebugMsg('');
         const provider = new GoogleAuthProvider();
         try {
-            await linkWithRedirect(auth.currentUser, provider);
-        } catch (error) {
-            handleError(error, 'LinkRedirect');
-        }
-    };
-
-    // 2. Google 綁定 (Popup 模式 - 備用)
-    const handleLinkGooglePopup = async () => {
-        setIsLoading(true); setDebugMsg('');
-        const provider = new GoogleAuthProvider();
-        try {
+            // 在 PWA/Mobile 上，Popup 體驗通常比 Redirect 好 (不會跳出 App)
             await linkWithPopup(auth.currentUser, provider);
             setIsLoading(false);
-            alert("綁定成功！(Popup)");
+            alert("綁定成功！資料已安全連結至 Google 帳號。");
         } catch (error) {
             handleError(error, 'LinkPopup');
         }
     };
 
-    // 3. Google 登入 (Redirect 模式)
-    const handleLoginGoogleRedirect = async () => {
-        setIsLoading(true); setDebugMsg('');
-        const provider = new GoogleAuthProvider();
-        try {
-            await signInWithRedirect(auth, provider);
-        } catch (error) {
-            handleError(error, 'LoginRedirect');
-        }
-    };
-
-    // 4. Google 登入 (Popup 模式)
-    const handleLoginGooglePopup = async () => {
+    // 統一入口：登入 Google (預設 Popup)
+    const handleLoginGoogle = async () => {
         setIsLoading(true); setDebugMsg('');
         const provider = new GoogleAuthProvider();
         try {
             await signInWithPopup(auth, provider);
-            setIsLoading(false); // 成功後會自動刷新，但先關掉 loading
+            setIsLoading(false);
         } catch (error) {
             handleError(error, 'LoginPopup');
         }
@@ -444,14 +428,14 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     return (
         <div className="space-y-6">
             
-            {/* 新增：帳號安全卡片 (v2.3 混合模式) */}
+            {/* 新增：帳號安全卡片 (v2.4 PWA 優化版) */}
             <div className={`p-6 rounded-xl shadow-lg border ${user?.isAnonymous ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
                 <h3 className="text-xl font-bold text-gray-800 mb-2 flex items-center justify-between">
                     <div className="flex items-center">
                         {user?.isAnonymous ? <ShieldCheck className="w-5 h-5 mr-2 text-orange-500" /> : <ShieldCheck className="w-5 h-5 mr-2 text-green-600" />}
                         帳號狀態：{user?.isAnonymous ? '訪客 (未備份)' : '已登入'}
                     </div>
-                    <span className="text-xs text-gray-400 font-normal">v2.3</span>
+                    <span className="text-xs text-gray-400 font-normal">v2.4 {isPWA ? '(App)' : '(Web)'}</span>
                 </h3>
                 
                 {/* 顯示詳細除錯訊息 */}
@@ -464,32 +448,25 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                 {user?.isAnonymous ? (
                     <div className="space-y-3">
                         <p className="text-sm text-gray-600">
-                            目前為訪客模式，在手機 App 版中會視為新使用者。
+                            {isPWA ? '您正在使用 App 模式，請登入以同步資料。' : '目前為訪客模式，清除快取將導致資料遺失。'}
                         </p>
                         
                         <div className="flex flex-col gap-2">
                             {/* 綁定備份區 */}
-                            <div className="text-xs font-bold text-gray-500 mt-2">綁定資料 (備份目前紀錄)</div>
-                            <div className="flex gap-2">
-                                <button onClick={handleLinkGoogleRedirect} disabled={isLoading} className="flex-1 bg-white border border-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 text-xs">
-                                    {isLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin"/> : <ShieldCheck className="w-3 h-3 mr-1" />} 方式A (轉跳)
-                                </button>
-                                <button onClick={handleLinkGooglePopup} disabled={isLoading} className="flex-1 bg-white border border-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 text-xs">
-                                    {isLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin"/> : <ShieldCheck className="w-3 h-3 mr-1" />} 方式B (彈窗)
-                                </button>
-                            </div>
+                            <button onClick={handleLinkGoogle} disabled={isLoading} className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-3 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 text-sm">
+                                {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <ShieldCheck className="w-4 h-4 mr-2" />}
+                                綁定目前資料 (Google)
+                            </button>
+
+                            <div className="text-center text-xs text-gray-400 font-bold my-1">- 或 -</div>
 
                             {/* 登入舊帳號區 */}
-                            <div className="text-xs font-bold text-gray-500 mt-2">登入 (找回舊資料)</div>
-                            <div className="flex gap-2">
-                                <button onClick={handleLoginGoogleRedirect} disabled={isLoading} className="flex-1 bg-indigo-600 text-white font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-indigo-700 text-xs">
-                                    {isLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin"/> : <LogIn className="w-3 h-3 mr-1" />} 登入 (轉跳)
-                                </button>
-                                <button onClick={handleLoginGooglePopup} disabled={isLoading} className="flex-1 bg-indigo-600 text-white font-bold py-2 rounded-lg shadow-sm flex items-center justify-center hover:bg-indigo-700 text-xs">
-                                    {isLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin"/> : <LogIn className="w-3 h-3 mr-1" />} 登入 (彈窗)
-                                </button>
-                            </div>
+                            <button onClick={handleLoginGoogle} disabled={isLoading} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg shadow-sm flex items-center justify-center hover:bg-indigo-700 text-sm">
+                                {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <LogIn className="w-4 h-4 mr-2" />}
+                                登入舊帳號 (Google)
+                            </button>
                         </div>
+                        {isPWA && <p className="text-xs text-gray-400 text-center mt-2">* App 模式下使用彈出視窗登入最穩定</p>}
                     </div>
                 ) : (
                     <div>
@@ -733,28 +710,17 @@ const App = () => {
     useEffect(() => {
         if (!auth) return;
         const init = async () => {
-            // 嘗試取得重定向結果 (處理 Redirect 登入後的回調)
+            // PWA 模式下通常不需要處理 redirect result，因為我們改用 Popup
+            // 但保留它以防萬一
             try {
                 const result = await getRedirectResult(auth);
-                if (result) {
-                    console.log("Redirect sign-in success:", result.user.email);
-                    // 這裡可以加入成功提示，但通常 onAuthStateChanged 會自動更新 UI
-                }
+                if (result) console.log("Redirect sign-in success:", result.user.email);
             } catch (error) {
                 console.error("Redirect sign-in error:", error);
-                if (error.code === 'auth/credential-already-in-use') {
-                    alert("此 Google 帳號已有其他紀錄，無法合併。");
-                } else if (error.code === 'auth/operation-not-allowed') {
-                    alert(`[${error.code}] 登入失敗：請確認 Firebase Console 已啟用 Google 登入。`);
-                } else if (error.code === 'auth/unauthorized-domain') {
-                    alert(`[${error.code}] 網域未授權！\n請至 Firebase Console -> Authentication -> Settings -> Authorized domains\n新增您的網址：${window.location.hostname}`);
-                } else if (error.code !== 'auth/popup-closed-by-user') {
-                    alert(`[${error.code}] 登入發生錯誤：${error.message}`);
-                }
             }
 
             if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
-            else if (!auth.currentUser) await signInAnonymously(auth); // 只有當沒有使用者時才匿名登入
+            else if (!auth.currentUser) await signInAnonymously(auth); 
             
             setUserId(auth.currentUser?.uid);
             setIsAuthReady(true);
