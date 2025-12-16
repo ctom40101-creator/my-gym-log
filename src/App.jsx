@@ -36,6 +36,20 @@ const auth = getAuth(app);
 const appId = 'mygymlog-604bc'; 
 const initialAuthToken = null; 
 
+// --- 預設動作資料 (新用戶初始化用) ---
+const DEFAULT_MOVEMENTS = [
+  { name: '平板槓鈴臥推', type: '推', bodyPart: '胸', mainMuscle: '胸大肌', secondaryMuscle: '前三角肌、肱三頭肌', tips: '收緊肩胛骨，手腕保持中立', initialWeight: 20 },
+  { name: '槓鈴深蹲', type: '腿', bodyPart: '腿', mainMuscle: '股四頭肌', secondaryMuscle: '臀大肌、核心', tips: '膝蓋對準腳尖，核心收緊', initialWeight: 20 },
+  { name: '傳統硬舉', type: '拉', bodyPart: '背', mainMuscle: '下背、臀大肌', secondaryMuscle: '腿後腱、握力', tips: '槓鈴貼近脛骨，背部打直', initialWeight: 40 },
+  { name: '站姿槓鈴肩推', type: '推', bodyPart: '肩', mainMuscle: '三角肌前束', secondaryMuscle: '肱三頭肌', tips: '核心收緊避免下背過度反折', initialWeight: 20 },
+  { name: '引體向上', type: '拉', bodyPart: '背', mainMuscle: '背闊肌', secondaryMuscle: '肱二頭肌', tips: '肩胛骨下沈，下巴過槓', initialWeight: 0 },
+  { name: '啞鈴二頭彎舉', type: '拉', bodyPart: '手臂', mainMuscle: '肱二頭肌', secondaryMuscle: '前臂', tips: '大臂夾緊身體', initialWeight: 5 },
+  { name: '滑輪三頭下壓', type: '推', bodyPart: '手臂', mainMuscle: '肱三頭肌', secondaryMuscle: '無', tips: '手肘固定身側', initialWeight: 10 },
+  { name: '棒式', type: '核心', bodyPart: '核心', mainMuscle: '腹橫肌', secondaryMuscle: '多裂肌', tips: '身體呈一直線，不塌腰', initialWeight: 0 },
+  { name: '啞鈴側平舉', type: '推', bodyPart: '肩', mainMuscle: '三角肌中束', secondaryMuscle: '斜方肌', tips: '手肘微彎，像倒水一樣舉起', initialWeight: 5 },
+  { name: '坐姿划船', type: '拉', bodyPart: '背', mainMuscle: '背闊肌、斜方肌', secondaryMuscle: '肱二頭肌', tips: '挺胸，專注背部擠壓', initialWeight: 20 },
+];
+
 // --- RPE 漸進式負荷參數 ---
 const RPE_UP_THRESHOLD = 7;      
 const RPE_DOWN_THRESHOLD = 9.5; 
@@ -292,6 +306,8 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     // 生涯設定
     const [startDate, setStartDate] = useState('');
     const [baseTrainingDays, setBaseTrainingDays] = useState(0);
+    const [nickname, setNickname] = useState(''); // New state for nickname
+
     
     // 帳號管理 state
     const [user, setUser] = useState(auth?.currentUser);
@@ -391,7 +407,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         try {
             // 1. 刪除資料庫紀錄 (手動刪除主要集合)
             // 注意：這裡只做簡單刪除，大量數據建議用 Cloud Functions，但在 Client 端盡力而為
-            const collectionsToDelete = ['LogDB', 'BodyMetricsDB'];
+            const collectionsToDelete = ['LogDB', 'BodyMetricsDB', 'MovementDB', 'PlansDB'];
             for (const colName of collectionsToDelete) {
                 const q = query(collection(db, `artifacts/${appId}/users/${userId}/${colName}`));
                 const snapshot = await getDocs(q);
@@ -423,6 +439,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             if (snap.exists()) {
                 setStartDate(snap.data().startDate || '');
                 setBaseTrainingDays(snap.data().baseTrainingDays || 0);
+                setNickname(snap.data().nickname || '');
             }
         };
         fetchSettings();
@@ -440,9 +457,10 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         try {
              await setDoc(doc(db, `artifacts/${appId}/users/${userId}/Settings`, 'profile'), {
                 startDate,
-                baseTrainingDays: Number(baseTrainingDays)
+                baseTrainingDays: Number(baseTrainingDays),
+                nickname // Save nickname
             });
-            alert('生涯設定已更新！');
+            alert('個人設定已更新！');
         } catch (e) {
             console.error(e);
             alert('更新失敗');
@@ -570,7 +588,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
 
             {/* 新增：健身旅程卡片 */}
             <div className="bg-white p-6 rounded-xl shadow-lg border border-indigo-100">
-                <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center"><Trophy className="w-5 h-5 mr-2 text-yellow-500" />健身旅程設定</h3>
+                <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center"><Trophy className="w-5 h-5 mr-2 text-yellow-500" />個人資訊與旅程</h3>
                 <div className="grid grid-cols-2 gap-4 mb-4">
                     <div className="bg-indigo-50 p-3 rounded-lg text-center">
                         <div className="text-xs text-gray-500 mb-1">總訓練天數</div>
@@ -583,6 +601,11 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                 </div>
 
                 <div className="space-y-3 border-t pt-4">
+                    {/* Nickname Input */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center"><User className="w-4 h-4 mr-1"/>暱稱 (APP如何稱呼您)</label>
+                        <input type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} className="w-full p-2 border rounded-lg focus:border-indigo-500" placeholder="例如：巨巨" />
+                    </div>
                      <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center"><Calendar className="w-4 h-4 mr-1"/>開始接觸健身日期</label>
                         <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full p-2 border rounded-lg focus:border-indigo-500" />
@@ -592,7 +615,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                         <input type="number" value={baseTrainingDays} onChange={(e) => setBaseTrainingDays(e.target.value)} className="w-full p-2 border rounded-lg" placeholder="例如：100" />
                         <p className="text-xs text-gray-400 mt-1">輸入您在使用此 App 之前大概已經練了幾天，系統會自動加上 App 內的打卡次數。</p>
                     </div>
-                    <button onClick={handleSaveSettings} className="w-full bg-gray-800 text-white font-bold py-2 rounded-lg hover:bg-gray-900 transition-colors">更新旅程設定</button>
+                    <button onClick={handleSaveSettings} className="w-full bg-gray-800 text-white font-bold py-2 rounded-lg hover:bg-gray-900 transition-colors">更新設定</button>
                 </div>
             </div>
 
@@ -621,7 +644,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     );
 };
 
-const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
+const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
     const [filter, setFilter] = useState('');
     const [isEditing, setIsEditing] = useState(false);
     const [isBatchMode, setIsBatchMode] = useState(false); // 新增：批次模式
@@ -630,7 +653,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
     const [editingMove, setEditingMove] = useState(null); 
     
     // LibraryScreen: Update filter buttons to body parts
-    const categories = ['胸', '背', '腿', '肩', '手臂', '核心'];
+    const categories = ['胸', '背', '腿', '肩', '手臂', '核心', '全身'];
     // Filter logic: Check m.bodyPart
     const filteredMovements = movementDB.filter(m => (!filter || m.bodyPart === filter || m.name.includes(filter)));
 
@@ -656,7 +679,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
         if (!confirm(`確定要刪除選取的 ${selectedItems.size} 個動作嗎？`)) return;
         const batch = writeBatch(db);
         selectedItems.forEach(id => {
-            const ref = doc(db, `artifacts/${appId}/public/data/MovementDB`, id);
+            const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, id); // 修正為 users 路徑
             batch.delete(ref);
         });
         await batch.commit();
@@ -671,7 +694,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
         
         const batch = writeBatch(db);
         lastImportedIds.forEach(id => {
-            const ref = doc(db, `artifacts/${appId}/public/data/MovementDB`, id);
+            const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, id); // 修正為 users 路徑
             batch.delete(ref);
         });
         
@@ -746,7 +769,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
                 if (cols.length >= 2) { 
                     const name = cols[0]?.trim();
                     if (name) {
-                        const ref = doc(db, `artifacts/${appId}/public/data/MovementDB`, name);
+                        const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, name); // 修正為 users 路徑
                         batch.set(ref, {
                             name: name,
                             type: cols[1]?.trim() || '',
@@ -783,9 +806,9 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId }) => {
     const handleSaveMovement = async () => {
         if (!db || !editingMove.name) return;
         const docId = editingMove.id || editingMove.name.trim(); 
-        try { await setDoc(doc(db, `artifacts/${appId}/public/data/MovementDB`, docId), { ...editingMove, initialWeight: Number(editingMove.initialWeight||20) }); setIsEditing(false); setEditingMove(null); if (!editingMove.id) setFilter(''); } catch(e) { console.error(e); }
+        try { await setDoc(doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, docId), { ...editingMove, initialWeight: Number(editingMove.initialWeight||20) }); setIsEditing(false); setEditingMove(null); if (!editingMove.id) setFilter(''); } catch(e) { console.error(e); }
     };
-    const handleDeleteMovement = async (id) => { if (confirm('刪除?')) await deleteDoc(doc(db, `artifacts/${appId}/public/data/MovementDB`, id)); };
+    const handleDeleteMovement = async (id) => { if (confirm('刪除?')) await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, id)); };
 
     return (
         <>
@@ -903,10 +926,10 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
     const handleSave = async () => {
         if (!db || !userId || !planName) return;
         const docId = editingPlanId || `plan-${Date.now()}`;
-        await setDoc(doc(db, `artifacts/${appId}/public/data/PlansDB`, docId), { name: planName, movements: planMovements, userId });
+        await setDoc(doc(db, `artifacts/${appId}/users/${userId}/PlansDB`, docId), { name: planName, movements: planMovements, userId }); // 修正為 users 路徑
         setIsCreating(false); setEditingPlanId(null);
     };
-    const handleDelete = async (id) => { if(confirm('刪除?')) await deleteDoc(doc(db, `artifacts/${appId}/public/data/PlansDB`, id)); };
+    const handleDelete = async (id) => { if(confirm('刪除?')) await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/PlansDB`, id)); }; // 修正為 users 路徑
 
     // Batch Delete for Menu
     const toggleSelection = (id) => {
@@ -920,7 +943,7 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
         if (!confirm(`確定要刪除選取的 ${selectedItems.size} 個菜單嗎？`)) return;
         const batch = writeBatch(db);
         selectedItems.forEach(id => {
-            const ref = doc(db, `artifacts/${appId}/public/data/PlansDB`, id);
+            const ref = doc(db, `artifacts/${appId}/users/${userId}/PlansDB`, id); // 修正為 users 路徑
             batch.delete(ref);
         });
         await batch.commit();
@@ -1106,8 +1129,11 @@ const App = () => {
 
     useEffect(() => {
         if (!isAuthReady || !userId || !db) return;
-        const unsub1 = onSnapshot(query(collection(db, `artifacts/${appId}/public/data/MovementDB`)), (s) => setMovementDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-        const unsub2 = onSnapshot(query(collection(db, `artifacts/${appId}/public/data/PlansDB`)), (s) => setPlansDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        // 修正路徑：讀取 users/{userId}/MovementDB (私有)
+        const unsub1 = onSnapshot(query(collection(db, `artifacts/${appId}/users/${userId}/MovementDB`)), (s) => setMovementDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        // 修正路徑：讀取 users/{userId}/PlansDB (私有)
+        const unsub2 = onSnapshot(query(collection(db, `artifacts/${appId}/users/${userId}/PlansDB`)), (s) => setPlansDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        
         const unsub3 = onSnapshot(query(collection(db, `artifacts/${appId}/users/${userId}/LogDB`), orderBy('date', 'desc')), (s) => setLogDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
         const unsub4 = onSnapshot(query(collection(db, `artifacts/${appId}/users/${userId}/BodyMetricsDB`)), (s) => setBodyMetricsDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
         return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
@@ -1145,7 +1171,7 @@ const App = () => {
 
     const renderScreen = () => {
         switch (screen) {
-            case 'Library': return <ScreenContainer title="🏋️ 動作庫"><LibraryScreen weightHistory={weightHistory} movementDB={movementDB} db={db} appId={appId} /></ScreenContainer>;
+            case 'Library': return <ScreenContainer title="🏋️ 動作庫"><LibraryScreen weightHistory={weightHistory} movementDB={movementDB} db={db} appId={appId} userId={userId} /></ScreenContainer>;
             case 'Menu': return <ScreenContainer title="📋 菜單"><MenuScreen setSelectedDailyPlanId={setSelectedDailyPlanId} selectedDailyPlanId={selectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} db={db} userId={userId} appId={appId} /></ScreenContainer>;
             case 'Analysis': return <ScreenContainer title="📈 分析"><AnalysisScreen logDB={logDB} bodyMetricsDB={bodyMetricsDB} /></ScreenContainer>;
             case 'Profile': return <ScreenContainer title="👤 個人"><ProfileScreen bodyMetricsDB={bodyMetricsDB} userId={userId} db={db} appId={appId} logDB={logDB} auth={auth} /></ScreenContainer>;
@@ -1188,9 +1214,23 @@ const NavMenu = ({ screen, setScreen }) => (
     </div>
 );
 
+// 新增：初始化預設動作 (針對新用戶)
 const setupInitialData = async (db, appId, userId) => {
-    // (Mock data logic simplified for brevity, assume present)
+    // 檢查用戶的動作庫是否為空
+    const q = query(collection(db, `artifacts/${appId}/users/${userId}/MovementDB`), limit(1));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) {
+        // 如果是空的，執行批次寫入
+        const batch = writeBatch(db);
+        DEFAULT_MOVEMENTS.forEach(move => {
+            const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, move.name);
+            batch.set(ref, move);
+        });
+        await batch.commit();
+        console.log("已為新用戶初始化基礎動作庫");
+    }
 };
+
 if (auth) onAuthStateChanged(auth, (u) => { if(u) setupInitialData(db, appId, u.uid); });
 
 export default App;
