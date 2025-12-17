@@ -2,10 +2,27 @@
 <html lang="zh-TW">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Gym Log</title>
-    <!-- 引入 Tailwind CSS -->
+    
+    <!-- 1. 設定 App 名稱 (這裡改成中文) -->
+    <!-- iOS 主畫面名稱 -->
+    <meta name="apple-mobile-web-app-title" content="健身日誌">
+    <!-- Android/Desktop 應用程式名稱 -->
+    <meta name="application-name" content="健身日誌">
+    
+    <!-- 2. 設定 App 圖示 (紫色背景 + 白色啞鈴) -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%234F46E5' rx='100'/%3E%3Cpath d='M144 144h224M144 368h224M184 104v304M328 104v304' stroke='white' stroke-width='40' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%234F46E5' rx='100'/%3E%3Cpath d='M144 144h224M144 368h224M184 104v304M328 104v304' stroke='white' stroke-width='40' stroke-linecap='round'/%3E%3C/svg%3E" />
+
+    <!-- 3. 設定狀態列顏色 -->
+    <meta name="theme-color" content="#4F46E5" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+
+    <!-- 4. 禁止縮放 (讓操作更像原生 App) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    
+    <!-- 瀏覽器分頁標題 -->
+    <title>健身日誌</title>
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body>
