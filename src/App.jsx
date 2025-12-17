@@ -15,7 +15,7 @@ import {
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -36,7 +36,7 @@ const auth = getAuth(app);
 const appId = 'mygymlog-604bc'; 
 const initialAuthToken = null; 
 
-// --- 預設動作資料 (新用戶初始化用) ---
+// --- 預設動作資料 ---
 const DEFAULT_MOVEMENTS = [
   { name: '平板槓鈴臥推', type: '推', bodyPart: '胸', mainMuscle: '胸大肌', secondaryMuscle: '前三角肌、肱三頭肌', tips: '收緊肩胛骨，手腕保持中立', initialWeight: 20 },
   { name: '槓鈴深蹲', type: '腿', bodyPart: '腿', mainMuscle: '股四頭肌', secondaryMuscle: '臀大肌、核心', tips: '膝蓋對準腳尖，核心收緊', initialWeight: 20 },
@@ -64,9 +64,12 @@ const calculateTotalVolume = (log) => {
     return log.reduce((total, set) => total + (set.reps * set.weight), 0);
 };
 
+// Epley Formula for 1RM
 const estimate1RM = (weight, reps) => {
-    if (reps >= 15) return weight; 
-    return Math.round(weight * (36 / (37 - reps)) * 10) / 10;
+    if (weight === 0) return 0;
+    if (reps === 1) return weight;
+    if (reps >= 15) return weight; // 高次數不適合估算極限
+    return Math.round(weight * (1 + reps / 30) * 10) / 10;
 };
 
 // ----------------------------------------------------
@@ -301,7 +304,7 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - v3.4 (移除資料救援功能)
+// 新增：個人頁面 (ProfileScreen) - v3.4 
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
@@ -314,7 +317,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     // 生涯設定
     const [startDate, setStartDate] = useState('');
     const [baseTrainingDays, setBaseTrainingDays] = useState(0);
-    const [nickname, setNickname] = useState(''); // New state for nickname
+    const [nickname, setNickname] = useState(''); 
 
     
     // 帳號管理 state
@@ -1192,21 +1195,190 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
     );
 };
 
-const AnalysisScreen = ({ logDB, bodyMetricsDB }) => {
-    const [view, setView] = useState('Volume');
-    const dailyVolume = useMemo(() => {
-        const map = {};
-        logDB.forEach(l => { if(!l.isReset) map[new Date(l.date).toLocaleDateString()] = (map[new Date(l.date).toLocaleDateString()] || 0) + l.overallVolume; });
-        return Object.keys(map).map(d => ({ name: d, Volume: map[d] })).slice(-10);
-    }, [logDB]);
+const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB }) => {
+    const [view, setView] = useState('Overview'); // Overview, Strength, Body
+    const [selectedMovement, setSelectedMovement] = useState('');
+
+    // 1. 概況數據計算
+    const stats = useMemo(() => {
+        const now = new Date();
+        const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+        const oneWeekAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+
+        const monthlyLogs = logDB.filter(l => l.date >= firstDayOfMonth);
+        const weeklyLogs = logDB.filter(l => l.date >= oneWeekAgo);
+
+        const monthCount = new Set(monthlyLogs.map(l => new Date(l.date).toDateString())).size;
+        const weekVolume = weeklyLogs.reduce((acc, curr) => acc + (curr.overallVolume || 0), 0);
+        
+        // 肌群分佈
+        const muscleSplit = {};
+        logDB.slice(0, 20).forEach(log => { // 取最近20次紀錄來分析
+            log.movements.forEach(m => {
+                // 這裡需要反查動作庫取得部位，若找不到則忽略
+                const moveDetail = movementDB.find(dbM => dbM.name === m.movementName);
+                const part = moveDetail?.bodyPart || '其他';
+                muscleSplit[part] = (muscleSplit[part] || 0) + (m.totalVolume || 0);
+            });
+        });
+        
+        const totalSplitVolume = Object.values(muscleSplit).reduce((a,b)=>a+b, 0) || 1;
+        const muscleSplitPercent = Object.entries(muscleSplit)
+            .map(([k, v]) => ({ name: k, percent: Math.round((v / totalSplitVolume) * 100) }))
+            .sort((a, b) => b.percent - a.percent);
+
+        return { monthCount, weekVolume, muscleSplitPercent };
+    }, [logDB, movementDB]);
+
+    // 2. 肌力數據 (1RM 趨勢)
+    const strengthData = useMemo(() => {
+        if (!selectedMovement) return [];
+        return logDB
+            .filter(log => log.movements.some(m => m.movementName === selectedMovement))
+            .map(log => {
+                const moveLog = log.movements.find(m => m.movementName === selectedMovement);
+                const bestSet = moveLog.sets.reduce((p, c) => (estimate1RM(c.weight, c.reps) > estimate1RM(p.weight, p.reps) ? c : p), { weight: 0, reps: 0 });
+                return {
+                    date: new Date(log.date).toLocaleDateString(undefined, {month:'numeric', day:'numeric'}),
+                    e1rm: estimate1RM(bestSet.weight, bestSet.reps),
+                    rawDate: log.date
+                };
+            })
+            .sort((a, b) => a.rawDate - b.rawDate)
+            .slice(-10); // 取最近10次
+    }, [logDB, selectedMovement]);
+
+    // SVG 圖表繪製 helper
+    const renderLineChart = (data, valueKey, labelKey, color) => {
+        if (data.length < 2) return <div className="text-gray-400 text-center py-10">資料不足，無法繪製圖表</div>;
+        const width = 300;
+        const height = 150;
+        const padding = 20;
+        const maxVal = Math.max(...data.map(d => d[valueKey])) * 1.1;
+        const minVal = Math.min(...data.map(d => d[valueKey])) * 0.9;
+        
+        const points = data.map((d, i) => {
+            const x = (i / (data.length - 1)) * (width - 2 * padding) + padding;
+            const y = height - ((d[valueKey] - minVal) / (maxVal - minVal)) * (height - 2 * padding) - padding;
+            return `${x},${y}`;
+        }).join(' ');
+
+        return (
+            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full">
+                <polyline fill="none" stroke={color} strokeWidth="3" points={points} />
+                {data.map((d, i) => {
+                    const x = (i / (data.length - 1)) * (width - 2 * padding) + padding;
+                    const y = height - ((d[valueKey] - minVal) / (maxVal - minVal)) * (height - 2 * padding) - padding;
+                    return (
+                        <g key={i}>
+                            <circle cx={x} cy={y} r="4" fill="white" stroke={color} strokeWidth="2" />
+                            <text x={x} y={y - 10} fontSize="10" textAnchor="middle" fill="#666">{d[valueKey]}</text>
+                            <text x={x} y={height - 2} fontSize="10" textAnchor="middle" fill="#999">{d[labelKey]}</text>
+                        </g>
+                    );
+                })}
+            </svg>
+        );
+    };
 
     return (
-        <div className="space-y-6">
-            <div className="flex justify-center bg-white p-1 rounded-full shadow-md"><button onClick={() => setView('Volume')} className={`px-4 py-2 rounded-full ${view==='Volume'?'bg-indigo-600 text-white':'text-gray-600'}`}>訓練量</button><button onClick={() => setView('Body')} className={`px-4 py-2 rounded-full ${view==='Body'?'bg-indigo-600 text-white':'text-gray-600'}`}>身體數據</button></div>
-            <div className="bg-white p-4 rounded-xl shadow-lg h-64 flex items-center justify-center text-gray-500">
-                {view === 'Volume' && (dailyVolume.length ? <div className="w-full h-full flex items-end space-x-1">{dailyVolume.map((d,i) => <div key={i} className="bg-indigo-500 w-full rounded-t" style={{height: `${Math.min(100, d.Volume/100)}%`}}></div>)}</div> : "尚無數據")}
-                {view === 'Body' && (bodyMetricsDB.length ? "圖表顯示區" : "尚無身體數據")}
+        <div className="space-y-6 pb-24">
+            {/* 分頁切換 */}
+            <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-100">
+                {['Overview', 'Strength', 'Body'].map(v => (
+                    <button key={v} onClick={() => setView(v)} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${view===v ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
+                        {v === 'Overview' && '概況'}
+                        {v === 'Strength' && '肌力'}
+                        {v === 'Body' && '體態'}
+                    </button>
+                ))}
             </div>
+
+            {/* 1. 概況 (Overview) */}
+            {view === 'Overview' && (
+                <div className="space-y-4 animate-fade-in">
+                    {/* 頂部數據卡 */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-4 rounded-xl text-white shadow-lg">
+                            <div className="flex items-center space-x-2 opacity-80 mb-1"><Calendar className="w-4 h-4"/> <span className="text-xs">本月訓練</span></div>
+                            <div className="text-3xl font-extrabold">{stats.monthCount} <span className="text-sm font-medium opacity-70">次</span></div>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-lg">
+                             <div className="flex items-center space-x-2 text-gray-500 mb-1"><Weight className="w-4 h-4"/> <span className="text-xs">本週容量</span></div>
+                             <div className="text-2xl font-bold text-gray-800">{(stats.weekVolume / 1000).toFixed(1)} <span className="text-sm text-gray-400">頓</span></div>
+                        </div>
+                    </div>
+
+                    {/* 肌群分佈 */}
+                    <div className="bg-white p-5 rounded-xl shadow-lg border border-gray-100">
+                        <h4 className="font-bold text-gray-800 mb-4 flex items-center"><Activity className="w-4 h-4 mr-2 text-indigo-500"/> 近期部位分佈</h4>
+                        <div className="space-y-3">
+                            {stats.muscleSplitPercent.length > 0 ? stats.muscleSplitPercent.map((m, i) => (
+                                <div key={m.name}>
+                                    <div className="flex justify-between text-xs mb-1">
+                                        <span className="font-medium text-gray-700">{m.name}</span>
+                                        <span className="text-gray-500">{m.percent}%</span>
+                                    </div>
+                                    <div className="w-full bg-gray-100 rounded-full h-2">
+                                        <div className="bg-indigo-500 h-2 rounded-full transition-all duration-1000" style={{ width: `${m.percent}%` }}></div>
+                                    </div>
+                                </div>
+                            )) : <p className="text-gray-400 text-sm text-center">尚無足夠數據</p>}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 2. 肌力 (Strength) */}
+            {view === 'Strength' && (
+                <div className="space-y-4 animate-fade-in">
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                        <label className="block text-xs font-bold text-gray-500 mb-2">選擇要分析的動作</label>
+                        <select 
+                            value={selectedMovement} 
+                            onChange={(e) => setSelectedMovement(e.target.value)} 
+                            className="w-full p-3 border rounded-lg bg-gray-50 font-bold text-gray-800"
+                        >
+                            <option value="" disabled>-- 請選擇動作 --</option>
+                            {/* 列出有紀錄的動作 */}
+                            {Array.from(new Set(logDB.flatMap(l => l.movements.map(m => m.movementName)))).map(name => (
+                                <option key={name} value={name}>{name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {selectedMovement && (
+                        <div className="bg-white p-4 rounded-xl shadow-lg border border-gray-100">
+                            <h4 className="font-bold text-gray-800 mb-4 flex items-center">
+                                <TrendingUp className="w-4 h-4 mr-2 text-green-500"/> 預估 1RM 趨勢 (kg)
+                            </h4>
+                            <div className="h-48 w-full">
+                                {renderLineChart(strengthData, 'e1rm', 'date', '#10B981')}
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-2 text-center">* 依據 Epley 公式估算，僅供參考</p>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* 3. 體態 (Body) */}
+            {view === 'Body' && (
+                <div className="space-y-4 animate-fade-in">
+                     <div className="bg-white p-4 rounded-xl shadow-lg border border-gray-100">
+                        <h4 className="font-bold text-gray-800 mb-4 flex items-center">
+                            <Scale className="w-4 h-4 mr-2 text-blue-500"/> 體重變化 (kg)
+                        </h4>
+                        <div className="h-48 w-full">
+                            {renderLineChart(
+                                [...bodyMetricsDB].sort((a,b)=>new Date(a.date)-new Date(b.date)).slice(-10).map(d => ({...d, shortDate: d.date.slice(5)})), 
+                                'weight', 
+                                'shortDate', 
+                                '#3B82F6'
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -1224,7 +1396,7 @@ const App = () => {
     const defaultMenuId = useMemo(() => plansDB.length > 0 ? plansDB[0].id : null, [plansDB]);
     const [selectedDailyPlanId, setSelectedDailyPlanId] = useState(defaultMenuId);
 
-    // State Persistence Logic (Lifted Up)
+    // State Persistence (Draft)
     const [currentLog, setCurrentLog] = useState(() => {
         try {
             const saved = localStorage.getItem('gym_log_draft');
@@ -1235,7 +1407,6 @@ const App = () => {
     useEffect(() => {
         localStorage.setItem('gym_log_draft', JSON.stringify(currentLog));
     }, [currentLog]);
-
 
     useEffect(() => { if (plansDB.length > 0 && !selectedDailyPlanId) setSelectedDailyPlanId(plansDB[0].id); }, [plansDB, selectedDailyPlanId]);
 
@@ -1268,6 +1439,67 @@ const App = () => {
         return () => unsub();
     }, []);
 
+    // 計算歷史紀錄與 AI 建議重量 (修正版：實作漸進式負荷邏輯)
+    useEffect(() => {
+        if (logDB.length === 0) return;
+        const historyMap = {};
+        movementDB.forEach(move => {
+            // 找出該動作的所有紀錄
+            const relevantLogs = logDB.filter(l => l.movements && l.movements.some(m => m.movementName === move.name));
+            let lastRecord = null, absoluteBest = null, calculatedSuggestion = move.initialWeight || 20;
+            
+            if (relevantLogs.length > 0) {
+                 // 排序：最新的在最前面
+                 const sorted = relevantLogs.sort((a,b) => b.date - a.date);
+                 
+                 // --- 1. 找上次紀錄與 RPE ---
+                 const latestLog = sorted[0];
+                 const latestMoveData = latestLog.movements.find(m => m.movementName === move.name);
+                 
+                 if (latestMoveData) {
+                     // 找出上次最重的一組 (通常以最重組作為基準)
+                     const bestSet = latestMoveData.sets.reduce((p, c) => (c.weight > p.weight ? c : p), { weight: 0 });
+                     if (bestSet.weight > 0) {
+                         lastRecord = { weight: bestSet.weight, reps: bestSet.reps };
+                         
+                         // --- 核心邏輯：漸進式負荷計算 ---
+                         const lastRpe = latestMoveData.rpe || 8; // 若沒填預設為 8
+                         const lastWeight = bestSet.weight;
+
+                         if (lastRpe <= RPE_UP_THRESHOLD) {
+                             // 太輕了 (< 7)，加重 2.5%
+                             calculatedSuggestion = Math.ceil(lastWeight * WEIGHT_INCREASE_MULTIPLIER * 2) / 2; // 四捨五入到 0.5
+                         } else if (lastRpe >= RPE_DOWN_THRESHOLD) {
+                             // 太重了 (> 9.5)，減重 2.5%
+                             calculatedSuggestion = Math.floor(lastWeight * WEIGHT_DECREASE_MULTIPLIER * 2) / 2;
+                         } else {
+                             // 剛好，維持原重
+                             calculatedSuggestion = lastWeight;
+                         }
+                     }
+                 }
+
+                 // --- 2. 找歷史 PR (絕對最大重量) ---
+                 let maxWeight = 0, bestReps = 0;
+                 sorted.forEach(l => {
+                     const m = l.movements.find(x => x.movementName === move.name);
+                     if (m) {
+                         const bs = m.sets.reduce((p, c) => (c.weight > p.weight ? c : p), { weight: 0 });
+                         if (bs.weight > maxWeight) { maxWeight = bs.weight; bestReps = bs.reps; }
+                     }
+                 });
+                 if (maxWeight > 0) absoluteBest = { weight: maxWeight, reps: bestReps };
+            }
+            
+            historyMap[move.name] = { 
+                lastRecord, 
+                absoluteBest, 
+                suggestion: calculatedSuggestion // 這裡現在會顯示動態計算後的值
+            };
+        });
+        setWeightHistory(historyMap);
+    }, [logDB, movementDB]);
+
     useEffect(() => {
         if (!isAuthReady || !userId || !db) return;
         // 修正路徑：讀取 users/{userId}/MovementDB (私有)
@@ -1280,41 +1512,13 @@ const App = () => {
         return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
     }, [isAuthReady, userId]);
 
-    useEffect(() => {
-        if (logDB.length === 0) return;
-        const historyMap = {};
-        movementDB.forEach(move => {
-            const relevantLogs = logDB.filter(l => l.movements && l.movements.some(m => m.movementName === move.name));
-            let lastRecord = null, absoluteBest = null;
-            if (relevantLogs.length > 0) {
-                 const sorted = relevantLogs.sort((a,b) => b.date - a.date);
-                 const latest = sorted[0].movements.find(m => m.movementName === move.name);
-                 if (latest) {
-                     const bestSet = latest.sets.reduce((p, c) => (c.weight > p.weight ? c : p), { weight: 0 });
-                     if (bestSet.weight > 0) lastRecord = { weight: bestSet.weight, reps: bestSet.reps };
-                 }
-                 let maxWeight = 0, bestReps = 0;
-                 sorted.forEach(l => {
-                     const m = l.movements.find(x => x.movementName === move.name);
-                     if (m) {
-                         const bs = m.sets.reduce((p, c) => (c.weight > p.weight ? c : p), { weight: 0 });
-                         if (bs.weight > maxWeight) { maxWeight = bs.weight; bestReps = bs.reps; }
-                     }
-                 });
-                 if (maxWeight > 0) absoluteBest = { weight: maxWeight, reps: bestReps };
-            }
-            historyMap[move.name] = { lastRecord, absoluteBest, suggestion: move.initialWeight || 20 };
-        });
-        setWeightHistory(historyMap);
-    }, [logDB, movementDB]);
-
     if (!isAuthReady) return <div className="p-10 text-center">Loading...</div>;
 
     const renderScreen = () => {
         switch (screen) {
             case 'Library': return <ScreenContainer title="🏋️ 動作庫"><LibraryScreen weightHistory={weightHistory} movementDB={movementDB} db={db} appId={appId} userId={userId} /></ScreenContainer>;
             case 'Menu': return <ScreenContainer title="📋 菜單"><MenuScreen setSelectedDailyPlanId={setSelectedDailyPlanId} selectedDailyPlanId={selectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} db={db} userId={userId} appId={appId} /></ScreenContainer>;
-            case 'Analysis': return <ScreenContainer title="📈 分析"><AnalysisScreen logDB={logDB} bodyMetricsDB={bodyMetricsDB} /></ScreenContainer>;
+            case 'Analysis': return <ScreenContainer title="📈 分析"><AnalysisScreen logDB={logDB} bodyMetricsDB={bodyMetricsDB} movementDB={movementDB} /></ScreenContainer>;
             case 'Profile': return <ScreenContainer title="👤 個人"><ProfileScreen bodyMetricsDB={bodyMetricsDB} userId={userId} db={db} appId={appId} logDB={logDB} auth={auth} /></ScreenContainer>;
             default: return <ScreenContainer title="✍️ 紀錄"><LogScreen selectedDailyPlanId={selectedDailyPlanId} setSelectedDailyPlanId={setSelectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} weightHistory={weightHistory} db={db} userId={userId} appId={appId} setScreen={setScreen} currentLog={currentLog} setCurrentLog={setCurrentLog} /></ScreenContainer>;
         }
