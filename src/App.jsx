@@ -1020,7 +1020,7 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
     const addMovementToPlan = (movementName) => {
         const movementDetail = movementDB.find(m => m.name === movementName);
         if (!movementDetail) return;
-        setPlanMovements([...planMovements, { name: movementName, sets: 3, targetReps: 10, type: movementDetail.type }]);
+        setPlanMovements([...planMovements, { name: movementName, sets: 4, targetReps: 12, type: movementDetail.type }]);
     };
 
     const handleSave = async () => {
@@ -1070,7 +1070,7 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
                             {bodyParts.map(bp => <option key={bp} value={bp}>{bp}</option>)}
                         </select>
                     </div>
-                    <select value={tempSelectedMove} onChange={(e)=>{addMovementToPlan(e.target.value); setTempSelectedMove('');}} className="w-full p-2 border rounded-lg"><option value="" disabled>-- 選擇動作 --</option>{filteredMovementsForMenu.map(m=><option key={m.id} value={m.name}>{m.name}</option>)}</select>
+                    <select value={tempSelectedMove} onChange={(e)=>{addMovementToPlan(e.target.value); setTempSelectedMove('');}} className="w-full p-2 border rounded-lg"><option value="" disabled>-- 選擇動作 --</option>{filteredMovementsForMenu.map(m=><option key={m.id} value={m.name}>{m.name}{m.mainMuscle ? ` [${m.mainMuscle}]` : ''}{m.secondaryMuscle ? ` (+${m.secondaryMuscle})` : ''}</option>)}</select>
                 </div>
             </div>
         );
