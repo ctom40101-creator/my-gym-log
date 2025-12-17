@@ -721,8 +721,9 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         // 新版格式：暱稱, 名稱...
         const headers = "暱稱,名稱,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量\n";
         const rows = movementDB.map(m => {
-            // 包裹雙引號處理逗號
-            return `"${nickname}","${m.name}","${m.type}","${m.bodyPart}","${m.mainMuscle}","${m.secondaryMuscle}","${m.tips}","${m.link}","${m.initialWeight}"`;
+            // 包裹雙引號處理逗號，並處理內容中既有的雙引號
+            const escape = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
+            return `${escape(nickname)},${escape(m.name)},${escape(m.type)},${escape(m.bodyPart)},${escape(m.mainMuscle)},${escape(m.secondaryMuscle)},${escape(m.tips)},${escape(m.link)},${escape(m.initialWeight)}`;
         }).join("\n");
 
         const blob = new Blob(["\uFEFF" + headers + rows], { type: 'text/csv;charset=utf-8;' });
@@ -737,6 +738,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
 
     const handleDownloadSampleCSV = () => {
         const headers = "暱稱,名稱,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量\n";
+        // 範例資料加上引號，避免逗號衝突
         const sampleRow1 = `"範例教練","臥推(教練版)","推","胸","胸大肌","三頭肌","保持背部挺直, 不要聳肩","",20\n`;
         const sampleRow2 = `,"深蹲(無暱稱)","腿","腿","股四頭肌","臀大肌","膝蓋對準腳尖","",20`;
         
@@ -750,7 +752,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         document.body.removeChild(link);
     };
 
-    // 匯入 CSV (支援新舊格式 + 暱稱處理 + 必填驗證)
+    // 新增：CSV 匯入 (增強版解析 + 智慧欄位偵測)
     const handleImportCSV = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -758,40 +760,61 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         
         reader.onload = async (event) => {
             const text = event.target.result;
-            const rows = text.split(/\r?\n/).slice(1); 
+            
+            // --- 強大的 CSV 解析器 (開始) ---
+            const parseCSV = (str) => {
+                const arr = [];
+                let quote = false;  
+                let row = 0, col = 0;
+                let c = 0;
+                
+                for (; c < str.length; c++) {
+                    let cc = str[c], nc = str[c+1];
+                    arr[row] = arr[row] || [];
+                    arr[row][col] = arr[row][col] || '';
+                    
+                    if (cc == '"' && quote && nc == '"') { 
+                        arr[row][col] += cc; 
+                        ++c; 
+                        continue; 
+                    }  
+                    if (cc == '"') { 
+                        quote = !quote; 
+                        continue; 
+                    }
+                    if (cc == ',' && !quote) { 
+                        ++col; 
+                        continue; 
+                    }
+                    if (cc == '\r' && nc == '\n' && !quote) { 
+                        ++row; col = 0; 
+                        ++c; 
+                        continue; 
+                    }
+                    if (cc == '\n' && !quote) { 
+                        ++row; col = 0; 
+                        continue; 
+                    }
+                    if (cc == '\r' && !quote) { 
+                        ++row; col = 0; 
+                        continue; 
+                    }
+                    arr[row][col] += cc;
+                }
+                return arr;
+            };
+            // --- 解析器 (結束) ---
+
+            const rawData = parseCSV(text);
+            // 移除空行與標題列
+            const rows = rawData.slice(1).filter(r => r.length > 0 && r.some(c => c.trim() !== ''));
+
             const batch = writeBatch(db);
             let count = 0;
-            let skippedCount = 0; // 新增：略過筆數統計
+            let skippedCount = 0;
             const newIds = []; 
 
-            const parseCSVRow = (row) => {
-                const result = [];
-                let current = '';
-                let inQuote = false;
-                for(let i=0; i<row.length; i++) {
-                    const char = row[i];
-                    if(char === '"') {
-                        if(inQuote && row[i+1] === '"') { 
-                            current += '"';
-                            i++;
-                        } else {
-                            inQuote = !inQuote;
-                        }
-                    } else if(char === ',' && !inQuote) {
-                        result.push(current.trim());
-                        current = '';
-                    } else {
-                        current += char;
-                    }
-                }
-                result.push(current.trim());
-                return result;
-            };
-
-            rows.forEach(row => {
-                if (!row.trim()) return;
-                const cols = parseCSVRow(row);
-                
+            rows.forEach(cols => {
                 // 判斷格式：舊版(8欄) vs 新版(9欄，第一欄是暱稱)
                 let sourceNickname = '';
                 let name = '';
@@ -805,7 +828,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
                     name = cols[0];
                     dataStartIdx = 0;
                 } else {
-                    skippedCount++; // 格式錯誤直接略過
+                    if (cols.length > 1) skippedCount++; 
                     return; 
                 }
 
@@ -814,10 +837,11 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
                 const bodyPart = cols[dataStartIdx+2]?.trim();
 
                 if (name && type && bodyPart) {
-                    // 根據模式決定名稱
+                    name = name.trim();
                     let finalName = name;
-                    if (importWithNickname && sourceNickname) {
-                        finalName = `(來自${sourceNickname})${name}`;
+                    
+                    if (importWithNickname && sourceNickname && sourceNickname.trim()) {
+                        finalName = `(來自${sourceNickname.trim()})${name}`;
                     }
 
                     const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, finalName); 
@@ -834,7 +858,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
                     count++;
                     newIds.push(finalName);
                 } else {
-                    skippedCount++; // 必填欄位有空值，略過
+                    skippedCount++;
                 }
             });
 
@@ -920,7 +944,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
                         {/* 復原 & 刪除 */}
                         <div className="flex justify-between items-center pt-2 border-t border-gray-200">
                             {lastImportedIds.length > 0 ? (
-                                <button onClick={handleUndoImport} className="bg-yellow-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center shadow-sm">
+                                <button onClick={handleUndoImport} className="bg-yellow-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center shadow-sm animate-pulse">
                                     <Undo2 className="w-3 h-3 mr-1" /> 復原上一次匯入
                                 </button>
                             ) : <div></div>}
