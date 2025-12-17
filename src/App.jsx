@@ -15,7 +15,7 @@ import {
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -64,7 +64,6 @@ const calculateTotalVolume = (log) => {
     return log.reduce((total, set) => total + (set.reps * set.weight), 0);
 };
 
-// Epley Formula for 1RM
 const estimate1RM = (weight, reps) => {
     if (weight === 0) return 0;
     if (reps === 1) return weight;
@@ -304,7 +303,7 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - v3.4 
+// 新增：個人頁面 (ProfileScreen) - v3.3 (移除資料救援功能)
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
@@ -317,7 +316,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     // 生涯設定
     const [startDate, setStartDate] = useState('');
     const [baseTrainingDays, setBaseTrainingDays] = useState(0);
-    const [nickname, setNickname] = useState(''); 
+    const [nickname, setNickname] = useState(''); // New state for nickname
 
     
     // 帳號管理 state
@@ -1132,16 +1131,25 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
     const handleMenuChange = (e) => {
         const newId = e.target.value;
         setSelectedDailyPlanId(newId);
+        
+        // 如果選的是空白，不動作
+        if (!newId) return;
+
         // Only overwrite currentLog when user explicitly changes the menu
         const plan = plansDB.find(p => p.id === newId);
         if (plan) {
-            if (currentLog.length > 0 && !confirm("切換菜單將會覆蓋目前的紀錄，確定嗎？")) return;
+            if (currentLog.length > 0 && !confirm("載入新菜單將會覆蓋目前的紀錄，確定嗎？")) {
+                // 如果取消，把下拉選單選回原本的 (或是空的)
+                e.target.value = selectedDailyPlanId;
+                return;
+            }
             setCurrentLog(plan.movements.map(m => ({ 
                 order: 0, 
                 movementName: m.name, 
                 targetSets: m.sets, 
                 note: '', 
-                sets: Array(Number(m.sets)).fill({ reps: m.targetReps, weight: 0 }), 
+                // 預設組數為菜單設定，若無則預設 4 組 12 下
+                sets: Array(Number(m.sets || 4)).fill({ reps: m.targetReps || 12, weight: 0 }), 
                 rpe: 8 
             })));
         }
@@ -1152,7 +1160,6 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
     };
     const handleNoteUpdate = (mi, v) => { const newLog = [...currentLog]; newLog[mi].note = v; setCurrentLog(newLog); };
     const handleRpeUpdate = (mi, v) => { const newLog = [...currentLog]; newLog[mi].rpe = v; setCurrentLog(newLog); };
-    
     const handleLogSubmit = async () => {
         const active = currentLog.filter(m => m.sets.some(s => s.weight > 0));
         if (active.length === 0) return alert("請至少記錄一組重量");
@@ -1162,8 +1169,9 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
         await setDoc(doc(collection(db, `artifacts/${appId}/users/${userId}/LogDB`), `${selectedDate}-${Date.now()}`), { ...sub, overallVolume: total });
         
         setCurrentLog([]); // Clear draft after submit
+        setSelectedDailyPlanId(''); // Reset menu selection
         alert('訓練完成！');
-        setScreen('Analysis');
+        setScreen('Analysis'); // Jump to Analysis
     };
     
     const executeResetWeight = async (name, weight) => {
@@ -1180,7 +1188,10 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
             <div className="flex justify-between items-center bg-white p-3 rounded-xl shadow-md mb-4">
                 <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="border rounded-lg p-2 text-sm" />
                 <button onClick={() => setIsBodyMetricsModalOpen(true)} className="p-2 bg-indigo-100 rounded-full text-indigo-600"><Scale className="w-5 h-5" /></button>
-                <select value={selectedDailyPlanId || ''} onChange={handleMenuChange} className="p-2 border rounded-lg text-sm bg-white w-1/3"><option value="" disabled>載入菜單</option>{plansDB.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+                <select value={selectedDailyPlanId || ''} onChange={handleMenuChange} className="p-2 border rounded-lg text-sm bg-white w-1/3 text-gray-700">
+                    <option value="">載入菜單</option>
+                    {plansDB.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
             </div>
             
             <div className="space-y-4 pb-20">
@@ -1188,15 +1199,18 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
                 {currentLog.map((move, i) => (
                     <MovementLogCard key={i} move={move} index={i} weightHistory={weightHistory} movementDB={movementDB} handleSetUpdate={handleSetUpdate} handleNoteUpdate={handleNoteUpdate} handleRpeUpdate={(index, val) => handleRpeUpdate(i, val)} openResetModal={(name) => setResetModalState({ isOpen: true, movementName: name, initialWeight: 20 })} />
                 ))}
-                <button onClick={() => setAddMoveModalOpen(true)} className="w-full bg-teal-500 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>新增動作</button>
+                <button onClick={() => setAddMoveModalOpen(true)} className="w-full bg-teal-500 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>新增動作 (預設 4組)</button>
                 {currentLog.length > 0 && <button onClick={handleLogSubmit} className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg my-4">完成訓練</button>}
             </div>
         </>
     );
 };
 
-const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB }) => {
-    const [view, setView] = useState('Overview'); // Overview, Strength, Body
+// ----------------------------------------------------
+// AnalysisScreen - v3.7 專業儀表板 + 肌力 + 體態 + 歷史紀錄管理 (含刪除功能)
+// ----------------------------------------------------
+const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB, db, appId, userId }) => {
+    const [view, setView] = useState('Overview'); // Overview, Strength, Body, History
     const [selectedMovement, setSelectedMovement] = useState('');
 
     // 1. 概況數據計算
@@ -1213,9 +1227,8 @@ const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB }) => {
         
         // 肌群分佈
         const muscleSplit = {};
-        logDB.slice(0, 20).forEach(log => { // 取最近20次紀錄來分析
+        logDB.slice(0, 20).forEach(log => { 
             log.movements.forEach(m => {
-                // 這裡需要反查動作庫取得部位，若找不到則忽略
                 const moveDetail = movementDB.find(dbM => dbM.name === m.movementName);
                 const part = moveDetail?.bodyPart || '其他';
                 muscleSplit[part] = (muscleSplit[part] || 0) + (m.totalVolume || 0);
@@ -1245,8 +1258,39 @@ const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB }) => {
                 };
             })
             .sort((a, b) => a.rawDate - b.rawDate)
-            .slice(-10); // 取最近10次
+            .slice(-10); 
     }, [logDB, selectedMovement]);
+
+    // 歷史紀錄刪除
+    const handleDeleteLog = async (logId) => {
+        if(!confirm("確定要刪除這筆紀錄嗎？無法復原。")) return;
+        try {
+            await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/LogDB`, logId));
+            alert("刪除成功");
+        } catch(e) {
+            console.error(e);
+            alert("刪除失敗");
+        }
+    };
+    
+    // 清空所有紀錄
+    const handleClearAllLogs = async () => {
+        if(!confirm("警告：這將會刪除「所有」的歷史訓練紀錄！\n這通常是為了清除測試資料。\n\n確定要清空嗎？")) return;
+        
+        const batch = writeBatch(db);
+        logDB.forEach(log => {
+             const ref = doc(db, `artifacts/${appId}/users/${userId}/LogDB`, log.id);
+             batch.delete(ref);
+        });
+        
+        try {
+            await batch.commit();
+            alert("所有紀錄已清空！");
+        } catch(e) {
+             console.error(e);
+             alert("清空失敗");
+        }
+    };
 
     // SVG 圖表繪製 helper
     const renderLineChart = (data, valueKey, labelKey, color) => {
@@ -1284,12 +1328,13 @@ const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB }) => {
     return (
         <div className="space-y-6 pb-24">
             {/* 分頁切換 */}
-            <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-100">
-                {['Overview', 'Strength', 'Body'].map(v => (
-                    <button key={v} onClick={() => setView(v)} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${view===v ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
+            <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
+                {['Overview', 'Strength', 'Body', 'History'].map(v => (
+                    <button key={v} onClick={() => setView(v)} className={`flex-1 py-2 px-1 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${view===v ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
                         {v === 'Overview' && '概況'}
                         {v === 'Strength' && '肌力'}
                         {v === 'Body' && '體態'}
+                        {v === 'History' && '歷史紀錄'}
                     </button>
                 ))}
             </div>
@@ -1379,6 +1424,50 @@ const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB }) => {
                     </div>
                 </div>
             )}
+
+            {/* 4. 歷史紀錄 (History) - 新增功能 */}
+            {view === 'History' && (
+                <div className="space-y-4 animate-fade-in">
+                    <div className="flex justify-between items-center">
+                        <h3 className="font-bold text-gray-800 flex items-center"><History className="w-5 h-5 mr-2 text-indigo-600"/> 訓練日誌</h3>
+                        {logDB.length > 0 && (
+                            <button onClick={handleClearAllLogs} className="text-xs text-red-500 font-bold border border-red-200 bg-red-50 px-2 py-1 rounded flex items-center hover:bg-red-100">
+                                <Eraser className="w-3 h-3 mr-1" /> 清空所有紀錄
+                            </button>
+                        )}
+                    </div>
+
+                    {logDB.length === 0 ? <p className="text-gray-400 text-center py-10">尚無紀錄</p> : (
+                        <div className="space-y-3">
+                            {logDB.map(log => (
+                                <div key={log.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
+                                    <div className="flex-grow">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <div className="font-bold text-indigo-600 text-lg">{new Date(log.date).toLocaleDateString()}</div>
+                                            <span className="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-500 font-bold">
+                                                {log.menuId === 'custom' || !log.menuId ? '自訂訓練' : '菜單訓練'}
+                                            </span>
+                                        </div>
+                                        <div className="text-xs text-gray-500 line-clamp-1 mb-2">
+                                            {log.movements.map(m => m.movementName).join('、')}
+                                        </div>
+                                        <div className="flex gap-3">
+                                             <div className="text-xs font-bold text-gray-700 bg-indigo-50 px-2 py-1 rounded">總量: {log.overallVolume} kg</div>
+                                             <div className="text-xs font-bold text-gray-700 bg-indigo-50 px-2 py-1 rounded">動作數: {log.movements.length}</div>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => handleDeleteLog(log.id)}
+                                        className="p-3 text-red-400 hover:bg-red-50 rounded-full transition-colors"
+                                    >
+                                        <Trash2 className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 };
@@ -1393,8 +1482,8 @@ const App = () => {
     const [bodyMetricsDB, setBodyMetricsDB] = useState([]); 
     const [weightHistory, setWeightHistory] = useState({}); 
 
-    const defaultMenuId = useMemo(() => plansDB.length > 0 ? plansDB[0].id : null, [plansDB]);
-    const [selectedDailyPlanId, setSelectedDailyPlanId] = useState(defaultMenuId);
+    // 初始化為空字串，防止自動選取
+    const [selectedDailyPlanId, setSelectedDailyPlanId] = useState('');
 
     // State Persistence (Draft)
     const [currentLog, setCurrentLog] = useState(() => {
@@ -1408,7 +1497,7 @@ const App = () => {
         localStorage.setItem('gym_log_draft', JSON.stringify(currentLog));
     }, [currentLog]);
 
-    useEffect(() => { if (plansDB.length > 0 && !selectedDailyPlanId) setSelectedDailyPlanId(plansDB[0].id); }, [plansDB, selectedDailyPlanId]);
+    // 移除自動設定第一個菜單的 useEffect
 
     useEffect(() => {
         if (!auth) return;
@@ -1518,7 +1607,7 @@ const App = () => {
         switch (screen) {
             case 'Library': return <ScreenContainer title="🏋️ 動作庫"><LibraryScreen weightHistory={weightHistory} movementDB={movementDB} db={db} appId={appId} userId={userId} /></ScreenContainer>;
             case 'Menu': return <ScreenContainer title="📋 菜單"><MenuScreen setSelectedDailyPlanId={setSelectedDailyPlanId} selectedDailyPlanId={selectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} db={db} userId={userId} appId={appId} /></ScreenContainer>;
-            case 'Analysis': return <ScreenContainer title="📈 分析"><AnalysisScreen logDB={logDB} bodyMetricsDB={bodyMetricsDB} movementDB={movementDB} /></ScreenContainer>;
+            case 'Analysis': return <ScreenContainer title="📈 分析"><AnalysisScreen logDB={logDB} bodyMetricsDB={bodyMetricsDB} movementDB={movementDB} db={db} appId={appId} userId={userId} /></ScreenContainer>;
             case 'Profile': return <ScreenContainer title="👤 個人"><ProfileScreen bodyMetricsDB={bodyMetricsDB} userId={userId} db={db} appId={appId} logDB={logDB} auth={auth} /></ScreenContainer>;
             default: return <ScreenContainer title="✍️ 紀錄"><LogScreen selectedDailyPlanId={selectedDailyPlanId} setSelectedDailyPlanId={setSelectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} weightHistory={weightHistory} db={db} userId={userId} appId={appId} setScreen={setScreen} currentLog={currentLog} setCurrentLog={setCurrentLog} /></ScreenContainer>;
         }
