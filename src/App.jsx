@@ -323,7 +323,6 @@ const AdminScreen = ({ db, appId }) => {
                 setUsers(userList);
             } catch (error) {
                 console.error("Admin fetch error:", error);
-                // alert("無法讀取用戶列表"); // Optional: suppress default error in UI
             } finally {
                 setIsLoading(false);
             }
@@ -342,9 +341,6 @@ const AdminScreen = ({ db, appId }) => {
                 const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
                 await Promise.all(deletePromises);
             }
-            // Optional: remove from index? Probably keep it or they disappear from list.
-            // await deleteDoc(doc(db, `artifacts/${appId}/public/data/UserIndex`, targetUserId));
-
             alert("該用戶資料已清空。");
         } catch (e) {
             console.error(e);
@@ -1497,7 +1493,7 @@ const App = () => {
         <div className="h-screen font-sans bg-gray-50 flex flex-col">
             <div className="flex-grow overflow-hidden">{renderScreen()}</div>
             {/* Pass isAdmin to NavMenu */}
-            <NavMenu screen={screen} setScreen={setScreen} isAdmin={isAdmin} />
+            <NavMenu screen={screen} setScreen={setScreen} isAdmin={currentUser?.email === ADMIN_EMAIL} />
         </div>
     );
 };
