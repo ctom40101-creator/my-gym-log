@@ -478,6 +478,8 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const handleLogout = async () => {
         if (confirm("確定要登出嗎？")) {
             await signOut(auth);
+            // 修正：登出後立即執行匿名登入，讓狀態切換為訪客
+            await signInAnonymously(auth);
         }
     };
 
@@ -498,6 +500,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
 
             await deleteUser(user);
             alert("帳號與資料已成功刪除。");
+            await signInAnonymously(auth); // 刪除後自動變訪客
         } catch (error) {
             handleError(error, '刪除帳號');
         } finally {
@@ -1341,6 +1344,9 @@ const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB, db, appId, userId })
 const App = () => {
     const [screen, setScreen] = useState('Log'); 
     const [userId, setUserId] = useState(null);
+    // Add current user state for admin check
+    const [currentUser, setCurrentUser] = useState(null);
+
     const [isAuthReady, setIsAuthReady] = useState(false);
     const [movementDB, setMovementDB] = useState([]); 
     const [plansDB, setPlansDB] = useState([]); 
@@ -1390,6 +1396,7 @@ const App = () => {
         if(!auth) return;
         const unsub = onAuthStateChanged(auth, (u) => {
             setUserId(u?.uid);
+            setCurrentUser(u);
         });
         return () => unsub();
     }, []);
@@ -1467,6 +1474,9 @@ const App = () => {
         return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
     }, [isAuthReady, userId]);
 
+    // Admin logic
+    const isAdmin = currentUser?.email === ADMIN_EMAIL;
+
     if (!isAuthReady) return <div className="p-10 text-center">Loading...</div>;
 
     const renderScreen = () => {
@@ -1484,7 +1494,8 @@ const App = () => {
     return (
         <div className="h-screen font-sans bg-gray-50 flex flex-col">
             <div className="flex-grow overflow-hidden">{renderScreen()}</div>
-            <NavMenu screen={screen} setScreen={setScreen} />
+            {/* Pass isAdmin to NavMenu */}
+            <NavMenu screen={screen} setScreen={setScreen} isAdmin={isAdmin} />
         </div>
     );
 };
@@ -1495,7 +1506,7 @@ const ScreenContainer = ({ children, title }) => (
         <div className="pb-32">{children}</div>
     </div>
 );
-const NavMenu = ({ screen, setScreen }) => (
+const NavMenu = ({ screen, setScreen, isAdmin }) => (
     <div className="fixed bottom-0 w-full bg-white border-t border-gray-200 pb-6 pt-3 px-2 flex justify-around shadow-[0_-5px_10px_rgba(0,0,0,0.05)] z-50">
         {[
             { id: 'Log', icon: NotebookText, label: '紀錄' },
@@ -1513,6 +1524,16 @@ const NavMenu = ({ screen, setScreen }) => (
                 <span className="text-xs font-bold">{i.label}</span>
             </button>
         ))}
+        {/* Admin Button (Conditional) */}
+        {isAdmin && (
+             <button 
+                onClick={() => setScreen('Admin')} 
+                className={`flex flex-col items-center justify-center flex-1 py-1 active:scale-95 transition-all ${screen==='Admin'?'text-red-600':'text-gray-400'}`}
+            >
+                <Shield className="w-8 h-8 mb-1" strokeWidth={screen==='Admin' ? 2.5 : 2} />
+                <span className="text-xs font-bold">管理</span>
+            </button>
+        )}
     </div>
 );
 
