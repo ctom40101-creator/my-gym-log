@@ -172,7 +172,7 @@ const RpeSelectorAlwaysVisible = ({ value, onChange }) => {
     );
 };
 
-// 6. 動作編輯器 (AI Prompt 複製功能 + 必填驗證)
+// 6. 動作編輯器
 const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
     const types = ['推', '拉', '腿', '核心'];
     const bodyParts = ['胸', '背', '腿', '肩', '手臂', '核心', '全身']; 
@@ -394,12 +394,10 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [isLoading, setIsLoading] = useState(false); 
     const [debugMsg, setDebugMsg] = useState('');
 
-    // 生涯設定
     const [startDate, setStartDate] = useState('');
     const [baseTrainingDays, setBaseTrainingDays] = useState(0);
     const [nickname, setNickname] = useState(''); 
 
-    // 帳號管理 state
     const [user, setUser] = useState(auth?.currentUser);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -414,7 +412,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     }, [auth]);
 
-    // 檢查是否已設定過密碼
     const isEmailLinked = useMemo(() => {
         return user?.providerData?.some(p => p.providerId === 'password');
     }, [user]);
@@ -437,7 +434,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     };
 
-    // 1. 設定 Email/密碼 (連結 Password Provider)
     const handleSetEmailPassword = async () => {
         if(!email || !password || !confirmPassword) return alert("請輸入完整資訊");
         if(password !== confirmPassword) return alert("兩次密碼輸入不一致");
@@ -454,7 +450,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     };
 
-    // 2. 登入 Email/密碼 (切換帳號)
     const handleLoginEmail = async () => {
         if(!email || !password) return alert("請輸入完整資訊");
         setIsLoading(true);
@@ -467,7 +462,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     };
 
-    // 忘記密碼
     const handleResetPassword = async () => {
         if (!email) return alert("請先輸入 Email");
         setIsLoading(true);
@@ -481,14 +475,12 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     };
 
-    // 登出
     const handleLogout = async () => {
         if (confirm("確定要登出嗎？")) {
             await signOut(auth);
         }
     };
 
-    // 刪除帳號與資料
     const handleDeleteAccount = async () => {
         if (!confirm("警告！這將永久刪除您的帳號以及所有訓練紀錄，無法復原。\n\n您確定要繼續嗎？")) return;
         setIsLoading(true);
@@ -862,7 +854,12 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
             <div className="flex gap-2 mb-4"><button onClick={() => {setEditingMove({ name: '', type: '', bodyPart: '', mainMuscle: '', secondaryMuscle: '', tips: '', link: '', initialWeight: 20 }); setIsEditing(true);}} className="flex-1 bg-teal-500 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>新增動作</button><button onClick={() => setIsBatchMode(!isBatchMode)} className={`px-4 rounded-xl font-bold border ${isBatchMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-600'}`}>{isBatchMode ? '完成' : '管理'}</button></div>
             {isBatchMode && (<div className="bg-gray-100 p-3 rounded-xl mb-4 animate-fade-in"><div className="flex flex-col gap-3"><div className="flex justify-between items-center border-b pb-2 border-gray-200"><div className="text-sm font-bold text-gray-600">匯出動作庫</div><button onClick={handleExportCSV} className="bg-white border border-indigo-200 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-indigo-50"><Download className="w-3 h-3 mr-1" /> 匯出 CSV (含暱稱)</button></div><div className="flex flex-col gap-2"><div className="text-sm font-bold text-gray-600">匯入動作</div><div className="flex items-center gap-2 mb-1"><input type="checkbox" id="importNick" checked={importWithNickname} onChange={e=>setImportWithNickname(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" /><label htmlFor="importNick" className="text-xs text-gray-600">保留來源註記 (來自 XXX)</label></div><div className="flex gap-2"><label className="flex-1 cursor-pointer bg-indigo-600 text-white px-3 py-2 rounded-lg text-xs font-bold flex items-center justify-center hover:bg-indigo-700 shadow-sm"><Upload className="w-3 h-3 mr-1" /> 選擇檔案匯入<input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} /></label><button onClick={handleDownloadSampleCSV} className="bg-white border border-gray-300 text-gray-500 px-3 py-2 rounded-lg text-xs font-bold hover:bg-gray-50">下載範例</button></div></div><div className="flex justify-between items-center pt-2 border-t border-gray-200">{lastImportedIds.length > 0 ? (<button onClick={handleUndoImport} className="bg-yellow-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center shadow-sm animate-pulse"><Undo2 className="w-3 h-3 mr-1" /> 復原上一次匯入</button>) : <div></div>}{selectedItems.size > 0 && (<button onClick={handleBatchDelete} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center"><Trash2 className="w-3 h-3 mr-1" /> 刪除 ({selectedItems.size})</button>)}</div></div></div>)}
             <div className="flex justify-between space-x-2 mb-4 overflow-x-auto"><button onClick={() => setFilter('')} className={`p-2 rounded-full text-sm font-semibold whitespace-nowrap ${!filter ? 'bg-indigo-600 text-white' : 'bg-white'}`}>全部</button>{categories.map(t => <button key={t} onClick={() => setFilter(t)} className={`p-2 rounded-full text-sm font-semibold whitespace-nowrap ${filter === t ? 'bg-indigo-600 text-white' : 'bg-white'}`}>{t}</button>)}</div>
-            {isBatchMode && (<div className="flex items-center mb-2 px-1" onClick={toggleSelectAll}>{selectedItems.size === filteredMovements.length && filteredMovements.length > 0 ? <CheckSquare className="w-5 h-5 text-indigo-600 mr-2"/> : <Square className="w-5 h-5 text-gray-400 mr-2"/>}<span className="text-sm font-bold text-gray-600">全選本頁</span></div>)}
+            {isBatchMode && (
+                <div className="flex items-center mb-2 px-1" onClick={toggleSelectAll}>
+                     {selectedItems.size === filteredMovements.length && filteredMovements.length > 0 ? <CheckSquare className="w-5 h-5 text-indigo-600 mr-2"/> : <Square className="w-5 h-5 text-gray-400 mr-2"/>}
+                     <span className="text-sm font-bold text-gray-600">全選本頁</span>
+                </div>
+            )}
             <div className="space-y-3">{filteredMovements.map(move => {
                 const record = weightHistory[move.name]?.absoluteBest;
                 return (<div key={move.id} className={`bg-white p-4 rounded-xl shadow-lg border transition-all ${isBatchMode && selectedItems.has(move.id) ? 'border-indigo-500 bg-indigo-50' : 'border-indigo-100'}`} onClick={() => isBatchMode && toggleSelection(move.id)}><div className="flex justify-between items-start"><div className="flex items-center">{isBatchMode && (selectedItems.has(move.id) ? <CheckSquare className="w-5 h-5 text-indigo-600 mr-3 shrink-0"/> : <Square className="w-5 h-5 text-gray-300 mr-3 shrink-0"/>)}<h3 className="text-xl font-bold text-gray-800">{move.name}</h3></div>{!isBatchMode && record && <div className="flex items-center bg-yellow-50 px-2 py-1 rounded-md border border-yellow-200"><Crown className="w-3 h-3 text-yellow-600 mr-1" /><span className="text-xs font-bold text-yellow-700">PR: {record.weight}kg x {record.reps}</span></div>}</div><div className="text-sm mt-1 mb-2 flex justify-between items-center pl-8"><div><span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 mr-2">{move.type}</span><span className="text-gray-600">{move.bodyPart} - {move.mainMuscle}</span></div>{!isBatchMode && <div className="flex space-x-2"><button onClick={(e) => {e.stopPropagation(); setEditingMove(move); setIsEditing(true);}} className="text-indigo-500 p-1"><Edit className="w-5 h-5"/></button><button onClick={(e) => {e.stopPropagation(); handleDeleteMovement(move.id, move.name);}} className="text-red-500 p-1"><Trash2 className="w-5 h-5"/></button></div>}</div>{!isBatchMode && <details className="text-gray-600 border-t pt-2 mt-2 pl-8"><summary className="font-semibold cursor-pointer">動作提示</summary><p className="mt-2 text-sm">{move.tips}</p>{move.secondaryMuscle && <p className="text-xs text-gray-500 mt-1">協同: {move.secondaryMuscle}</p>}</details>}</div>);
@@ -1058,7 +1055,7 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
                 <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="border rounded-lg p-2 text-sm" />
                 <button onClick={() => setIsBodyMetricsModalOpen(true)} className="p-2 bg-indigo-100 rounded-full text-indigo-600"><Scale className="w-5 h-5" /></button>
                 <select value={selectedDailyPlanId || ''} onChange={handleMenuChange} className="p-2 border rounded-lg text-sm bg-white w-1/3 text-gray-700">
-                    <option value="">載入菜單</option>
+                    <option value="">载入菜單</option>
                     {plansDB.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
             </div>
