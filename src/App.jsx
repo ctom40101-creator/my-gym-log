@@ -15,7 +15,7 @@ import {
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -312,23 +312,25 @@ const AdminScreen = ({ db, appId }) => {
     const [users, setUsers] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    useEffect(() => {
-        const fetchUsers = async () => {
-            setIsLoading(true);
-            try {
-                // Fetch all documents from the PUBLIC UserIndex collection
-                const q = query(collection(db, `artifacts/${appId}/public/data/UserIndex`));
-                const snapshot = await getDocs(q);
-                const userList = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                setUsers(userList);
-            } catch (error) {
-                console.error("Admin fetch error:", error);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        fetchUsers();
+    const fetchUsers = useCallback(async () => {
+        setIsLoading(true);
+        try {
+            // Fetch all documents from the PUBLIC UserIndex collection
+            const q = query(collection(db, `artifacts/${appId}/public/data/UserIndex`));
+            const snapshot = await getDocs(q);
+            const userList = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            setUsers(userList);
+        } catch (error) {
+            console.error("Admin fetch error:", error);
+            // alert("無法讀取用戶列表"); // Optional: suppress default error in UI
+        } finally {
+            setIsLoading(false);
+        }
     }, [db, appId]);
+
+    useEffect(() => {
+        fetchUsers();
+    }, [fetchUsers]);
 
     const handleClearUserData = async (targetUserId) => {
         if (!confirm(`確定要清空用戶 ${targetUserId} 的所有資料嗎？ (這不會刪除帳號本身，只會刪除紀錄)`)) return;
@@ -342,6 +344,8 @@ const AdminScreen = ({ db, appId }) => {
                 await Promise.all(deletePromises);
             }
             alert("該用戶資料已清空。");
+            // Refresh list
+            fetchUsers();
         } catch (e) {
             console.error(e);
             alert("刪除失敗");
@@ -351,8 +355,15 @@ const AdminScreen = ({ db, appId }) => {
     return (
         <div className="space-y-4">
             <div className="bg-red-50 p-4 rounded-xl border border-red-200 mb-4">
-                <h3 className="font-bold text-red-800 flex items-center"><Shield className="w-5 h-5 mr-2"/> 管理員專區</h3>
-                <p className="text-xs text-red-600 mt-1">此區域僅供管理員使用。您可以清空用戶的資料庫紀錄。</p>
+                <div className="flex justify-between items-start">
+                    <div>
+                        <h3 className="font-bold text-red-800 flex items-center"><Shield className="w-5 h-5 mr-2"/> 管理員專區</h3>
+                        <p className="text-xs text-red-600 mt-1">此區域僅供管理員使用。您可以清空用戶的資料庫紀錄。</p>
+                    </div>
+                    <button onClick={fetchUsers} className="text-xs bg-white p-2 rounded-full border border-red-200 text-red-600 hover:bg-red-50">
+                        <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                    </button>
+                </div>
             </div>
 
             {isLoading ? <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-500"/></div> : (
@@ -1548,6 +1559,22 @@ const setupInitialData = async (db, appId, userId) => {
             batch.set(ref, move);
         });
         await batch.commit();
+    }
+    
+    // Auto-register user in public index on login
+    // This fixes the issue where test accounts were not showing up in Admin
+    if (userId) {
+        const auth = getAuth();
+        const userAuth = auth.currentUser;
+        if (userAuth) {
+             const userIndexRef = doc(db, `artifacts/${appId}/public/data/UserIndex`, userId);
+             setDoc(userIndexRef, {
+                email: userAuth.email || 'anonymous',
+                uid: userId,
+                lastLogin: Date.now(),
+                isAnonymous: userAuth.isAnonymous
+            }, { merge: true });
+        }
     }
 };
 
