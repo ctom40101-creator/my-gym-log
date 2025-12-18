@@ -15,7 +15,7 @@ import {
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -35,6 +35,9 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 const appId = 'mygymlog-604bc'; 
 const initialAuthToken = null; 
+
+// --- 管理員設定 ---
+const ADMIN_EMAIL = 'ctom40101@gmail.com';
 
 // --- 預設動作資料 ---
 const DEFAULT_MOVEMENTS = [
@@ -67,7 +70,7 @@ const calculateTotalVolume = (log) => {
 const estimate1RM = (weight, reps) => {
     if (weight === 0) return 0;
     if (reps === 1) return weight;
-    if (reps >= 15) return weight; // 高次數不適合估算極限
+    if (reps >= 15) return weight; 
     return Math.round(weight * (1 + reps / 30) * 10) / 10;
 };
 
@@ -303,7 +306,85 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 };
 
 // ----------------------------------------------------
-// 新增：個人頁面 (ProfileScreen) - v3.4 (移除資料救援功能)
+// AdminScreen
+// ----------------------------------------------------
+const AdminScreen = ({ db, appId }) => {
+    const [users, setUsers] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchUsers = async () => {
+            setIsLoading(true);
+            try {
+                // Fetch all documents from 'users' collection
+                const q = query(collection(db, `artifacts/${appId}/users`));
+                const snapshot = await getDocs(q);
+                const userList = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                setUsers(userList);
+            } catch (error) {
+                console.error("Admin fetch error:", error);
+                alert("無法讀取用戶列表，請確認資料庫權限設定。");
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchUsers();
+    }, [db, appId]);
+
+    const handleClearUserData = async (targetUserId) => {
+        if (!confirm(`確定要清空用戶 ${targetUserId} 的所有資料嗎？ (這不會刪除帳號本身，只會刪除紀錄)`)) return;
+        
+        try {
+            const collectionsToDelete = ['LogDB', 'BodyMetricsDB', 'MovementDB', 'PlansDB'];
+            for (const colName of collectionsToDelete) {
+                const q = query(collection(db, `artifacts/${appId}/users/${targetUserId}/${colName}`));
+                const snapshot = await getDocs(q);
+                const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+                await Promise.all(deletePromises);
+            }
+            alert("該用戶資料已清空。");
+        } catch (e) {
+            console.error(e);
+            alert("刪除失敗");
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="bg-red-50 p-4 rounded-xl border border-red-200 mb-4">
+                <h3 className="font-bold text-red-800 flex items-center"><Shield className="w-5 h-5 mr-2"/> 管理員專區</h3>
+                <p className="text-xs text-red-600 mt-1">此區域僅供管理員使用。您可以清空用戶的資料庫紀錄，但無法直接刪除 Auth 帳號 (需至 Firebase Console)。</p>
+            </div>
+
+            {isLoading ? <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-500"/></div> : (
+                <div className="space-y-3">
+                    {users.length === 0 ? <p className="text-center text-gray-500">沒有找到用戶資料 (需登入過才會建立)</p> : users.map(u => (
+                        <div key={u.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col gap-2">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <div className="font-bold text-gray-800">{u.nickname || '未命名用戶'}</div>
+                                    <div className="text-xs text-gray-500">{u.email || '匿名/無Email'}</div>
+                                    <div className="text-[10px] text-gray-400 font-mono mt-1">ID: {u.id}</div>
+                                </div>
+                                <span className="text-xs bg-gray-100 px-2 py-1 rounded">
+                                    {new Date(u.lastLogin).toLocaleDateString()}
+                                </span>
+                            </div>
+                            <div className="flex justify-end pt-2 border-t mt-2">
+                                <button onClick={() => handleClearUserData(u.id)} className="text-xs bg-red-50 text-red-600 px-3 py-2 rounded-lg font-bold border border-red-100 flex items-center hover:bg-red-100">
+                                    <Trash2 className="w-3 h-3 mr-1" /> 清空此用戶資料
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ----------------------------------------------------
+// ProfileScreen
 // ----------------------------------------------------
 const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const [weight, setWeight] = useState('');
@@ -316,14 +397,13 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     // 生涯設定
     const [startDate, setStartDate] = useState('');
     const [baseTrainingDays, setBaseTrainingDays] = useState(0);
-    const [nickname, setNickname] = useState(''); // New state for nickname
+    const [nickname, setNickname] = useState(''); 
 
-    
     // 帳號管理 state
     const [user, setUser] = useState(auth?.currentUser);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState(''); // 確認密碼
+    const [confirmPassword, setConfirmPassword] = useState(''); 
     const [isSetPasswordMode, setIsSetPasswordMode] = useState(false);
     const [isLoginMode, setIsLoginMode] = useState(false); 
 
@@ -405,18 +485,14 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const handleLogout = async () => {
         if (confirm("確定要登出嗎？")) {
             await signOut(auth);
-            // 登出後，會自動觸發 App 層級的 onAuthStateChanged 變回匿名
         }
     };
 
     // 刪除帳號與資料
     const handleDeleteAccount = async () => {
         if (!confirm("警告！這將永久刪除您的帳號以及所有訓練紀錄，無法復原。\n\n您確定要繼續嗎？")) return;
-        
         setIsLoading(true);
         try {
-            // 1. 刪除資料庫紀錄 (手動刪除主要集合)
-            // 注意：這裡只做簡單刪除，大量數據建議用 Cloud Functions，但在 Client 端盡力而為
             const collectionsToDelete = ['LogDB', 'BodyMetricsDB', 'MovementDB', 'PlansDB'];
             for (const colName of collectionsToDelete) {
                 const q = query(collection(db, `artifacts/${appId}/users/${userId}/${colName}`));
@@ -424,15 +500,12 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                 const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
                 await Promise.all(deletePromises);
             }
-            
-            // 刪除設定檔
             await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/Settings`, 'profile'));
+            // Also delete the user index doc
+            await deleteDoc(doc(db, `artifacts/${appId}/users`, userId));
 
-            // 2. 刪除使用者帳號
             await deleteUser(user);
             alert("帳號與資料已成功刪除。");
-            
-            // 刪除後會自動登出
         } catch (error) {
             handleError(error, '刪除帳號');
         } finally {
@@ -440,7 +513,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     };
 
-    // 載入生涯設定
     useEffect(() => {
         if (!userId || !db) return;
         const fetchSettings = async () => {
@@ -455,21 +527,26 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         fetchSettings();
     }, [userId, db, appId]);
 
-    // 計算總天數
     const totalTrainingDays = useMemo(() => {
         const uniqueDates = new Set(logDB.map(log => new Date(log.date).toDateString()));
         return Number(baseTrainingDays) + uniqueDates.size;
     }, [logDB, baseTrainingDays]);
 
-    // 儲存生涯設定
     const handleSaveSettings = async () => {
         if (!userId || !db) return;
         try {
              await setDoc(doc(db, `artifacts/${appId}/users/${userId}/Settings`, 'profile'), {
                 startDate,
                 baseTrainingDays: Number(baseTrainingDays),
-                nickname // Save nickname
+                nickname
             });
+            // Update the user index as well for Admin view
+            await setDoc(doc(db, `artifacts/${appId}/users`, userId), {
+                email: user.email || 'anonymous',
+                nickname: nickname,
+                lastLogin: Date.now()
+            }, { merge: true });
+
             alert('個人設定已更新！');
         } catch (e) {
             console.error(e);
@@ -477,7 +554,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     };
 
-    // 儲存或更新體態
     const handleSave = async () => {
         if (!userId || !db) return;
         try {
@@ -497,7 +573,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     };
 
-    // 刪除紀錄
     const handleDelete = async (dateKey) => {
         if (!confirm('確定要刪除這筆紀錄嗎？')) return;
         try {
@@ -507,7 +582,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         }
     };
 
-    // 編輯 (將資料填入上方表單)
     const handleEdit = (metric) => {
         setDate(metric.date);
         setWeight(metric.weight);
@@ -519,8 +593,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
 
     return (
         <div className="space-y-6">
-            
-            {/* 新增：帳號中心 (v3.1 純信箱 + 刪除帳號) */}
             <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
                 <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center justify-between">
                     <div className="flex items-center">
@@ -528,15 +600,11 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                     </div>
                     {user?.isAnonymous ? <span className="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded">訪客</span> : <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">已登入</span>}
                 </h3>
-
-                {/* 狀態顯示區 */}
                 <div className="flex items-center space-x-2 mb-4">
                     <div className={`w-full p-3 rounded-lg border flex items-center justify-center ${isEmailLinked ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
                         <Mail className="w-4 h-4 mr-2" /> {isEmailLinked ? `已登入：${user.email}` : '尚未設定帳號密碼'}
                     </div>
                 </div>
-
-                {/* 主操作區：還沒登入 (訪客) 或是想要設定帳密 */}
                 {!isEmailLinked && !isLoginMode && (
                     <div className="space-y-3">
                          {isSetPasswordMode ? (
@@ -559,8 +627,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                          )}
                     </div>
                 )}
-                
-                {/* 底部功能區 (登出/登入/刪除) */}
                 <div className="flex justify-between items-center text-xs text-gray-500 mt-6">
                     {user?.isAnonymous ? (
                         <button onClick={()=>setIsLoginMode(!isLoginMode)} className="flex items-center hover:text-indigo-600">
@@ -577,8 +643,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                         </div>
                     )}
                 </div>
-
-                {/* 登入模式區塊 */}
                 {isLoginMode && (
                     <div className="mt-4 p-4 bg-gray-50 rounded-lg animate-fade-in border border-indigo-100">
                         <h4 className="text-sm font-bold text-gray-700 mb-3 text-center">登入現有帳號</h4>
@@ -586,7 +650,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                              <input type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full p-2 border rounded text-sm"/>
                              <input type="password" placeholder="密碼" value={password} onChange={e=>setPassword(e.target.value)} className="w-full p-2 border rounded text-sm"/>
                              <button onClick={handleLoginEmail} className="w-full bg-indigo-600 text-white py-2 rounded text-sm font-bold">登入</button>
-                             
                              <div className="flex justify-between mt-2">
                                 <button onClick={handleResetPassword} className="text-xs text-indigo-500">忘記密碼?</button>
                                 <button onClick={()=>setIsLoginMode(false)} className="text-xs text-gray-400">取消</button>
@@ -595,8 +658,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                     </div>
                 )}
             </div>
-
-            {/* 新增：健身旅程卡片 */}
             <div className="bg-white p-6 rounded-xl shadow-lg border border-indigo-100">
                 <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center"><Trophy className="w-5 h-5 mr-2 text-yellow-500" />個人資訊與旅程</h3>
                 <div className="grid grid-cols-2 gap-4 mb-4">
@@ -609,9 +670,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                         <div className="text-2xl font-extrabold text-indigo-600">{totalTrainingDays - baseTrainingDays} <span className="text-xs font-normal text-gray-400">次</span></div>
                     </div>
                 </div>
-
                 <div className="space-y-3 border-t pt-4">
-                    {/* Nickname Input */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center"><User className="w-4 h-4 mr-1"/>暱稱 (APP如何稱呼您)</label>
                         <input type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} className="w-full p-2 border rounded-lg focus:border-indigo-500" placeholder="例如：巨巨" />
@@ -628,8 +687,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                     <button onClick={handleSaveSettings} className="w-full bg-gray-800 text-white font-bold py-2 rounded-lg hover:bg-gray-900 transition-colors">更新設定</button>
                 </div>
             </div>
-
-            {/* 體態數據卡片 */}
             <div className="bg-white p-6 rounded-xl shadow-lg border border-indigo-100">
                 <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center"><Activity className="w-5 h-5 mr-2 text-indigo-600" />更新身體數據</h3>
                 <div className="space-y-4">
@@ -641,8 +698,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                     <button onClick={handleSave} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-indigo-700 transition-colors">儲存 / 更新體態</button>
                 </div>
             </div>
-            
-            {/* 歷史列表 */}
             <div className="bg-white p-4 rounded-xl shadow-lg">
                 <h3 className="text-lg font-bold text-gray-800 mb-3 border-b pb-2">歷史紀錄</h3>
                 {sortedMetrics.length === 0 ? <p className="text-center text-gray-500">無數據</p> : (
@@ -661,8 +716,6 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
     const [selectedItems, setSelectedItems] = useState(new Set()); 
     const [lastImportedIds, setLastImportedIds] = useState([]); 
     const [editingMove, setEditingMove] = useState(null); 
-    
-    // Fetch Nickname
     const [nickname, setNickname] = useState('');
     useEffect(() => {
         if (!userId) return;
@@ -672,28 +725,19 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         };
         fetchNickname();
     }, [userId, db, appId]);
-
-    // Import Mode State (預設為「一般匯入」，可切換為「保留來源註記」)
     const [importWithNickname, setImportWithNickname] = useState(false);
-
     const categories = ['胸', '背', '腿', '肩', '手臂', '核心', '全身'];
     const filteredMovements = movementDB.filter(m => (!filter || m.bodyPart === filter || m.name.includes(filter)));
 
     const toggleSelection = (id) => {
         const newSet = new Set(selectedItems);
-        if (newSet.has(id)) newSet.delete(id);
-        else newSet.add(id);
+        if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
         setSelectedItems(newSet);
     };
-
     const toggleSelectAll = () => {
-        if (selectedItems.size === filteredMovements.length) {
-            setSelectedItems(new Set());
-        } else {
-            setSelectedItems(new Set(filteredMovements.map(m => m.id)));
-        }
+        if (selectedItems.size === filteredMovements.length) setSelectedItems(new Set());
+        else setSelectedItems(new Set(filteredMovements.map(m => m.id)));
     };
-
     const handleBatchDelete = async () => {
         if (!confirm(`確定要刪除選取的 ${selectedItems.size} 個動作嗎？`)) return;
         const batch = writeBatch(db);
@@ -705,37 +749,22 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         setIsBatchMode(false);
         setSelectedItems(new Set());
     };
-
     const handleUndoImport = async () => {
         if (lastImportedIds.length === 0) return;
         if (!confirm(`確定要復原 (刪除) 剛剛匯入的 ${lastImportedIds.length} 個動作嗎？`)) return;
-        
         const batch = writeBatch(db);
         lastImportedIds.forEach(id => {
             const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, id); 
             batch.delete(ref);
         });
-        
-        try {
-            await batch.commit();
-            setLastImportedIds([]); 
-            alert("已復原上一次匯入！");
-        } catch (error) {
-            console.error("Undo failed:", error);
-            alert("復原失敗，請稍後再試。");
-        }
+        try { await batch.commit(); setLastImportedIds([]); alert("已復原上一次匯入！"); } catch (error) { console.error("Undo failed:", error); alert("復原失敗，請稍後再試。"); }
     };
-    
-    // 匯出 CSV (新版：第一欄固定為暱稱)
     const handleExportCSV = () => {
-        // 新版格式：暱稱, 名稱...
         const headers = "暱稱,名稱,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量\n";
         const rows = movementDB.map(m => {
-            // 包裹雙引號處理逗號，並處理內容中既有的雙引號
             const escape = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
             return `${escape(nickname)},${escape(m.name)},${escape(m.type)},${escape(m.bodyPart)},${escape(m.mainMuscle)},${escape(m.secondaryMuscle)},${escape(m.tips)},${escape(m.link)},${escape(m.initialWeight)}`;
         }).join("\n");
-
         const blob = new Blob(["\uFEFF" + headers + rows], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -745,13 +774,10 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         link.click();
         document.body.removeChild(link);
     };
-
     const handleDownloadSampleCSV = () => {
         const headers = "暱稱,名稱,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量\n";
-        // 範例資料加上引號，避免逗號衝突
         const sampleRow1 = `"範例教練","臥推(教練版)","推","胸","胸大肌","三頭肌","保持背部挺直, 不要聳肩","",20\n`;
         const sampleRow2 = `,"深蹲(無暱稱)","腿","腿","股四頭肌","臀大肌","膝蓋對準腳尖","",20`;
-        
         const blob = new Blob(["\uFEFF" + headers + sampleRow1 + sampleRow2], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -761,99 +787,44 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         link.click();
         document.body.removeChild(link);
     };
-
-    // 新增：CSV 匯入 (增強版解析 + 智慧欄位偵測)
     const handleImportCSV = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
         const reader = new FileReader();
-        
         reader.onload = async (event) => {
             const text = event.target.result;
-            
-            // --- 強大的 CSV 解析器 (開始) ---
             const parseCSV = (str) => {
                 const arr = [];
-                let quote = false;  
-                let row = 0, col = 0;
-                let c = 0;
-                
+                let quote = false; let row = 0, col = 0; let c = 0;
                 for (; c < str.length; c++) {
                     let cc = str[c], nc = str[c+1];
                     arr[row] = arr[row] || [];
                     arr[row][col] = arr[row][col] || '';
-                    
-                    if (cc == '"' && quote && nc == '"') { 
-                        arr[row][col] += cc; 
-                        ++c; 
-                        continue; 
-                    }  
-                    if (cc == '"') { 
-                        quote = !quote; 
-                        continue; 
-                    }
-                    if (cc == ',' && !quote) { 
-                        ++col; 
-                        continue; 
-                    }
-                    if (cc == '\r' && nc == '\n' && !quote) { 
-                        ++row; col = 0; 
-                        ++c; 
-                        continue; 
-                    }
-                    if (cc == '\n' && !quote) { 
-                        ++row; col = 0; 
-                        continue; 
-                    }
-                    if (cc == '\r' && !quote) { 
-                        ++row; col = 0; 
-                        continue; 
-                    }
+                    if (cc == '"' && quote && nc == '"') { arr[row][col] += cc; ++c; continue; }  
+                    if (cc == '"') { quote = !quote; continue; }
+                    if (cc == ',' && !quote) { ++col; continue; }
+                    if (cc == '\r' && nc == '\n' && !quote) { ++row; col = 0; ++c; continue; }
+                    if (cc == '\n' && !quote) { ++row; col = 0; continue; }
+                    if (cc == '\r' && !quote) { ++row; col = 0; continue; }
                     arr[row][col] += cc;
                 }
                 return arr;
             };
-            // --- 解析器 (結束) ---
-
             const rawData = parseCSV(text);
-            // 移除空行與標題列
             const rows = rawData.slice(1).filter(r => r.length > 0 && r.some(c => c.trim() !== ''));
-
             const batch = writeBatch(db);
-            let count = 0;
-            let skippedCount = 0;
-            const newIds = []; 
-
+            let count = 0; let skippedCount = 0; const newIds = []; 
             rows.forEach(cols => {
-                // 判斷格式：舊版(8欄) vs 新版(9欄，第一欄是暱稱)
-                let sourceNickname = '';
-                let name = '';
-                let dataStartIdx = 0;
-
-                if (cols.length >= 9) { // 新版格式 (有暱稱欄位)
-                    sourceNickname = cols[0];
-                    name = cols[1];
-                    dataStartIdx = 1;
-                } else if (cols.length >= 8) { // 舊版格式 (無暱稱)
-                    name = cols[0];
-                    dataStartIdx = 0;
-                } else {
-                    if (cols.length > 1) skippedCount++; 
-                    return; 
-                }
-
-                // 必填欄位驗證：名稱、類型、部位
+                let sourceNickname = ''; let name = ''; let dataStartIdx = 0;
+                if (cols.length >= 9) { sourceNickname = cols[0]; name = cols[1]; dataStartIdx = 1; } 
+                else if (cols.length >= 8) { name = cols[0]; dataStartIdx = 0; } 
+                else { if (cols.length > 1) skippedCount++; return; }
                 const type = cols[dataStartIdx+1]?.trim();
                 const bodyPart = cols[dataStartIdx+2]?.trim();
-
                 if (name && type && bodyPart) {
                     name = name.trim();
                     let finalName = name;
-                    
-                    if (importWithNickname && sourceNickname && sourceNickname.trim()) {
-                        finalName = `(來自${sourceNickname.trim()})${name}`;
-                    }
-
+                    if (importWithNickname && sourceNickname && sourceNickname.trim()) { finalName = `(來自${sourceNickname.trim()})${name}`; }
                     const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, finalName); 
                     batch.set(ref, {
                         name: finalName,
@@ -865,46 +836,21 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
                         link: cols[dataStartIdx+6]?.trim() || '',
                         initialWeight: Number(cols[dataStartIdx+7]?.trim()) || 20
                     });
-                    count++;
-                    newIds.push(finalName);
-                } else {
-                    skippedCount++;
-                }
+                    count++; newIds.push(finalName);
+                } else { skippedCount++; }
             });
-
             if (count > 0) {
-                try {
-                    await batch.commit();
-                    setLastImportedIds(newIds); 
-                    let msg = `成功匯入 ${count} 個動作！\n如果不滿意，可以點擊「復原」按鈕撤銷。`;
-                    if (skippedCount > 0) {
-                        msg += `\n注意：有 ${skippedCount} 筆資料因欄位不全（名稱/類型/部位為空）而略過。`;
-                    }
-                    alert(msg);
-                } catch (error) {
-                    console.error("Import failed:", error);
-                    alert("匯入失敗，請檢查檔案格式。");
-                }
-            } else {
-                if (skippedCount > 0) {
-                    alert(`所有資料 (${skippedCount} 筆) 皆因欄位不全而無法匯入。`);
-                } else {
-                    alert("檔案中沒有有效的資料列。");
-                }
-            }
+                try { await batch.commit(); setLastImportedIds(newIds); let msg = `成功匯入 ${count} 個動作！\n如果不滿意，可以點擊「復原」按鈕撤銷。`; if (skippedCount > 0) { msg += `\n注意：有 ${skippedCount} 筆資料因欄位不全（名稱/類型/部位為空）而略過。`; } alert(msg); } catch (error) { console.error("Import failed:", error); alert("匯入失敗，請檢查檔案格式。"); }
+            } else { if (skippedCount > 0) { alert(`所有資料 (${skippedCount} 筆) 皆因欄位不全而無法匯入。`); } else { alert("檔案中沒有有效的資料列。"); } }
         };
         reader.readAsText(file);
         e.target.value = null; 
     };
-    
-    // 手動儲存驗證
     const handleSaveMovement = async () => {
         if (!db) return;
-        // Validation
         if (!editingMove.name?.trim()) return alert("請輸入動作名稱");
         if (!editingMove.type) return alert("請選擇動作類型");
         if (!editingMove.bodyPart) return alert("請選擇訓練部位");
-
         const docId = editingMove.id || editingMove.name.trim(); 
         try { await setDoc(doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, docId), { ...editingMove, initialWeight: Number(editingMove.initialWeight||20) }); setIsEditing(false); setEditingMove(null); if (!editingMove.id) setFilter(''); } catch(e) { console.error(e); }
     };
@@ -913,90 +859,13 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
     return (
         <>
             <MovementEditor isOpen={isEditing} onClose={() => setIsEditing(false)} onSave={handleSaveMovement} data={editingMove || {}} onChange={(f, v) => setEditingMove(p => ({ ...p, [f]: v }))} />
-            
-            <div className="flex gap-2 mb-4">
-                <button onClick={() => {setEditingMove({ name: '', type: '', bodyPart: '', mainMuscle: '', secondaryMuscle: '', tips: '', link: '', initialWeight: 20 }); setIsEditing(true);}} className="flex-1 bg-teal-500 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>新增動作</button>
-                <button onClick={() => setIsBatchMode(!isBatchMode)} className={`px-4 rounded-xl font-bold border ${isBatchMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-600'}`}>{isBatchMode ? '完成' : '管理'}</button>
-            </div>
-
-            {/* 匯入匯出區塊 (僅在管理模式顯示) */}
-            {isBatchMode && (
-                <div className="bg-gray-100 p-3 rounded-xl mb-4 animate-fade-in">
-                    <div className="flex flex-col gap-3">
-                        {/* 匯出 */}
-                        <div className="flex justify-between items-center border-b pb-2 border-gray-200">
-                             <div className="text-sm font-bold text-gray-600">匯出動作庫</div>
-                             <button onClick={handleExportCSV} className="bg-white border border-indigo-200 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-indigo-50">
-                                <Download className="w-3 h-3 mr-1" /> 匯出 CSV (含暱稱)
-                            </button>
-                        </div>
-
-                        {/* 匯入 */}
-                        <div className="flex flex-col gap-2">
-                            <div className="text-sm font-bold text-gray-600">匯入動作</div>
-                            
-                            <div className="flex items-center gap-2 mb-1">
-                                <input type="checkbox" id="importNick" checked={importWithNickname} onChange={e=>setImportWithNickname(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" />
-                                <label htmlFor="importNick" className="text-xs text-gray-600">保留來源註記 (來自 XXX)</label>
-                            </div>
-
-                            <div className="flex gap-2">
-                                 <label className="flex-1 cursor-pointer bg-indigo-600 text-white px-3 py-2 rounded-lg text-xs font-bold flex items-center justify-center hover:bg-indigo-700 shadow-sm">
-                                    <Upload className="w-3 h-3 mr-1" /> 選擇檔案匯入
-                                    <input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} />
-                                </label>
-                                <button onClick={handleDownloadSampleCSV} className="bg-white border border-gray-300 text-gray-500 px-3 py-2 rounded-lg text-xs font-bold hover:bg-gray-50">
-                                    下載範例
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* 復原 & 刪除 */}
-                        <div className="flex justify-between items-center pt-2 border-t border-gray-200">
-                            {lastImportedIds.length > 0 ? (
-                                <button onClick={handleUndoImport} className="bg-yellow-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center shadow-sm animate-pulse">
-                                    <Undo2 className="w-3 h-3 mr-1" /> 復原上一次匯入
-                                </button>
-                            ) : <div></div>}
-                            
-                            {selectedItems.size > 0 && (
-                                <button onClick={handleBatchDelete} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center">
-                                    <Trash2 className="w-3 h-3 mr-1" /> 刪除 ({selectedItems.size})
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-
+            <div className="flex gap-2 mb-4"><button onClick={() => {setEditingMove({ name: '', type: '', bodyPart: '', mainMuscle: '', secondaryMuscle: '', tips: '', link: '', initialWeight: 20 }); setIsEditing(true);}} className="flex-1 bg-teal-500 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>新增動作</button><button onClick={() => setIsBatchMode(!isBatchMode)} className={`px-4 rounded-xl font-bold border ${isBatchMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-600'}`}>{isBatchMode ? '完成' : '管理'}</button></div>
+            {isBatchMode && (<div className="bg-gray-100 p-3 rounded-xl mb-4 animate-fade-in"><div className="flex flex-col gap-3"><div className="flex justify-between items-center border-b pb-2 border-gray-200"><div className="text-sm font-bold text-gray-600">匯出動作庫</div><button onClick={handleExportCSV} className="bg-white border border-indigo-200 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-indigo-50"><Download className="w-3 h-3 mr-1" /> 匯出 CSV (含暱稱)</button></div><div className="flex flex-col gap-2"><div className="text-sm font-bold text-gray-600">匯入動作</div><div className="flex items-center gap-2 mb-1"><input type="checkbox" id="importNick" checked={importWithNickname} onChange={e=>setImportWithNickname(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" /><label htmlFor="importNick" className="text-xs text-gray-600">保留來源註記 (來自 XXX)</label></div><div className="flex gap-2"><label className="flex-1 cursor-pointer bg-indigo-600 text-white px-3 py-2 rounded-lg text-xs font-bold flex items-center justify-center hover:bg-indigo-700 shadow-sm"><Upload className="w-3 h-3 mr-1" /> 選擇檔案匯入<input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} /></label><button onClick={handleDownloadSampleCSV} className="bg-white border border-gray-300 text-gray-500 px-3 py-2 rounded-lg text-xs font-bold hover:bg-gray-50">下載範例</button></div></div><div className="flex justify-between items-center pt-2 border-t border-gray-200">{lastImportedIds.length > 0 ? (<button onClick={handleUndoImport} className="bg-yellow-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center shadow-sm animate-pulse"><Undo2 className="w-3 h-3 mr-1" /> 復原上一次匯入</button>) : <div></div>}{selectedItems.size > 0 && (<button onClick={handleBatchDelete} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center"><Trash2 className="w-3 h-3 mr-1" /> 刪除 ({selectedItems.size})</button>)}</div></div></div>)}
             <div className="flex justify-between space-x-2 mb-4 overflow-x-auto"><button onClick={() => setFilter('')} className={`p-2 rounded-full text-sm font-semibold whitespace-nowrap ${!filter ? 'bg-indigo-600 text-white' : 'bg-white'}`}>全部</button>{categories.map(t => <button key={t} onClick={() => setFilter(t)} className={`p-2 rounded-full text-sm font-semibold whitespace-nowrap ${filter === t ? 'bg-indigo-600 text-white' : 'bg-white'}`}>{t}</button>)}</div>
-            
-            {/* 全選按鈕 */}
-            {isBatchMode && (
-                <div className="flex items-center mb-2 px-1" onClick={toggleSelectAll}>
-                     {selectedItems.size === filteredMovements.length && filteredMovements.length > 0 ? <CheckSquare className="w-5 h-5 text-indigo-600 mr-2"/> : <Square className="w-5 h-5 text-gray-400 mr-2"/>}
-                     <span className="text-sm font-bold text-gray-600">全選本頁</span>
-                </div>
-            )}
-
+            {isBatchMode && (<div className="flex items-center mb-2 px-1" onClick={toggleSelectAll}>{selectedItems.size === filteredMovements.length && filteredMovements.length > 0 ? <CheckSquare className="w-5 h-5 text-indigo-600 mr-2"/> : <Square className="w-5 h-5 text-gray-400 mr-2"/>}<span className="text-sm font-bold text-gray-600">全選本頁</span></div>)}
             <div className="space-y-3">{filteredMovements.map(move => {
                 const record = weightHistory[move.name]?.absoluteBest;
-                return (
-                    <div key={move.id} className={`bg-white p-4 rounded-xl shadow-lg border transition-all ${isBatchMode && selectedItems.has(move.id) ? 'border-indigo-500 bg-indigo-50' : 'border-indigo-100'}`} onClick={() => isBatchMode && toggleSelection(move.id)}>
-                        <div className="flex justify-between items-start">
-                            <div className="flex items-center">
-                                {isBatchMode && (selectedItems.has(move.id) ? <CheckSquare className="w-5 h-5 text-indigo-600 mr-3 shrink-0"/> : <Square className="w-5 h-5 text-gray-300 mr-3 shrink-0"/>)}
-                                <h3 className="text-xl font-bold text-gray-800">{move.name}</h3>
-                            </div>
-                            {!isBatchMode && record && <div className="flex items-center bg-yellow-50 px-2 py-1 rounded-md border border-yellow-200"><Crown className="w-3 h-3 text-yellow-600 mr-1" /><span className="text-xs font-bold text-yellow-700">PR: {record.weight}kg x {record.reps}</span></div>}
-                        </div>
-                        <div className="text-sm mt-1 mb-2 flex justify-between items-center pl-8">
-                            <div><span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 mr-2">{move.type}</span><span className="text-gray-600">{move.bodyPart} - {move.mainMuscle}</span></div>
-                            {!isBatchMode && <div className="flex space-x-2"><button onClick={(e) => {e.stopPropagation(); setEditingMove(move); setIsEditing(true);}} className="text-indigo-500 p-1"><Edit className="w-5 h-5"/></button><button onClick={(e) => {e.stopPropagation(); handleDeleteMovement(move.id, move.name);}} className="text-red-500 p-1"><Trash2 className="w-5 h-5"/></button></div>}
-                        </div>
-                        {!isBatchMode && <details className="text-gray-600 border-t pt-2 mt-2 pl-8"><summary className="font-semibold cursor-pointer">動作提示</summary><p className="mt-2 text-sm">{move.tips}</p>{move.secondaryMuscle && <p className="text-xs text-gray-500 mt-1">協同: {move.secondaryMuscle}</p>}</details>}
-                    </div>
-                );
+                return (<div key={move.id} className={`bg-white p-4 rounded-xl shadow-lg border transition-all ${isBatchMode && selectedItems.has(move.id) ? 'border-indigo-500 bg-indigo-50' : 'border-indigo-100'}`} onClick={() => isBatchMode && toggleSelection(move.id)}><div className="flex justify-between items-start"><div className="flex items-center">{isBatchMode && (selectedItems.has(move.id) ? <CheckSquare className="w-5 h-5 text-indigo-600 mr-3 shrink-0"/> : <Square className="w-5 h-5 text-gray-300 mr-3 shrink-0"/>)}<h3 className="text-xl font-bold text-gray-800">{move.name}</h3></div>{!isBatchMode && record && <div className="flex items-center bg-yellow-50 px-2 py-1 rounded-md border border-yellow-200"><Crown className="w-3 h-3 text-yellow-600 mr-1" /><span className="text-xs font-bold text-yellow-700">PR: {record.weight}kg x {record.reps}</span></div>}</div><div className="text-sm mt-1 mb-2 flex justify-between items-center pl-8"><div><span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 mr-2">{move.type}</span><span className="text-gray-600">{move.bodyPart} - {move.mainMuscle}</span></div>{!isBatchMode && <div className="flex space-x-2"><button onClick={(e) => {e.stopPropagation(); setEditingMove(move); setIsEditing(true);}} className="text-indigo-500 p-1"><Edit className="w-5 h-5"/></button><button onClick={(e) => {e.stopPropagation(); handleDeleteMovement(move.id, move.name);}} className="text-red-500 p-1"><Trash2 className="w-5 h-5"/></button></div>}</div>{!isBatchMode && <details className="text-gray-600 border-t pt-2 mt-2 pl-8"><summary className="font-semibold cursor-pointer">動作提示</summary><p className="mt-2 text-sm">{move.tips}</p>{move.secondaryMuscle && <p className="text-xs text-gray-500 mt-1">協同: {move.secondaryMuscle}</p>}</details>}</div>);
             })}</div>
         </>
     );
@@ -1604,6 +1473,8 @@ const App = () => {
     if (!isAuthReady) return <div className="p-10 text-center">Loading...</div>;
 
     const renderScreen = () => {
+        if (screen === 'Admin') return <ScreenContainer title="🛡️ 管理後台"><AdminScreen db={db} appId={appId} /></ScreenContainer>;
+
         switch (screen) {
             case 'Library': return <ScreenContainer title="🏋️ 動作庫"><LibraryScreen weightHistory={weightHistory} movementDB={movementDB} db={db} appId={appId} userId={userId} /></ScreenContainer>;
             case 'Menu': return <ScreenContainer title="📋 菜單"><MenuScreen setSelectedDailyPlanId={setSelectedDailyPlanId} selectedDailyPlanId={selectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} db={db} userId={userId} appId={appId} /></ScreenContainer>;
@@ -1661,7 +1532,6 @@ const setupInitialData = async (db, appId, userId) => {
             batch.set(ref, move);
         });
         await batch.commit();
-        console.log("已為新用戶初始化基礎動作庫");
     }
 };
 
