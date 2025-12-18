@@ -316,14 +316,14 @@ const AdminScreen = ({ db, appId }) => {
         const fetchUsers = async () => {
             setIsLoading(true);
             try {
-                // Fetch all documents from 'users' collection
-                const q = query(collection(db, `artifacts/${appId}/users`));
+                // Fetch all documents from the PUBLIC UserIndex collection
+                const q = query(collection(db, `artifacts/${appId}/public/data/UserIndex`));
                 const snapshot = await getDocs(q);
                 const userList = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                 setUsers(userList);
             } catch (error) {
                 console.error("Admin fetch error:", error);
-                alert("無法讀取用戶列表，請確認資料庫權限設定。");
+                // alert("無法讀取用戶列表"); // Optional: suppress default error in UI
             } finally {
                 setIsLoading(false);
             }
@@ -342,6 +342,9 @@ const AdminScreen = ({ db, appId }) => {
                 const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
                 await Promise.all(deletePromises);
             }
+            // Optional: remove from index? Probably keep it or they disappear from list.
+            // await deleteDoc(doc(db, `artifacts/${appId}/public/data/UserIndex`, targetUserId));
+
             alert("該用戶資料已清空。");
         } catch (e) {
             console.error(e);
@@ -353,7 +356,7 @@ const AdminScreen = ({ db, appId }) => {
         <div className="space-y-4">
             <div className="bg-red-50 p-4 rounded-xl border border-red-200 mb-4">
                 <h3 className="font-bold text-red-800 flex items-center"><Shield className="w-5 h-5 mr-2"/> 管理員專區</h3>
-                <p className="text-xs text-red-600 mt-1">此區域僅供管理員使用。您可以清空用戶的資料庫紀錄，但無法直接刪除 Auth 帳號 (需至 Firebase Console)。</p>
+                <p className="text-xs text-red-600 mt-1">此區域僅供管理員使用。您可以清空用戶的資料庫紀錄。</p>
             </div>
 
             {isLoading ? <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-500"/></div> : (
@@ -367,7 +370,7 @@ const AdminScreen = ({ db, appId }) => {
                                     <div className="text-[10px] text-gray-400 font-mono mt-1">ID: {u.id}</div>
                                 </div>
                                 <span className="text-xs bg-gray-100 px-2 py-1 rounded">
-                                    {new Date(u.lastLogin).toLocaleDateString()}
+                                    {u.lastLogin ? new Date(u.lastLogin).toLocaleDateString() : '未知時間'}
                                 </span>
                             </div>
                             <div className="flex justify-end pt-2 border-t mt-2">
@@ -478,7 +481,6 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const handleLogout = async () => {
         if (confirm("確定要登出嗎？")) {
             await signOut(auth);
-            // 修正：登出後立即執行匿名登入，讓狀態切換為訪客
             await signInAnonymously(auth);
         }
     };
@@ -495,8 +497,8 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                 await Promise.all(deletePromises);
             }
             await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/Settings`, 'profile'));
-            // Also delete the user index doc
-            await deleteDoc(doc(db, `artifacts/${appId}/users`, userId));
+            // Remove from UserIndex (Public)
+            await deleteDoc(doc(db, `artifacts/${appId}/public/data/UserIndex`, userId));
 
             await deleteUser(user);
             alert("帳號與資料已成功刪除。");
@@ -530,16 +532,19 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const handleSaveSettings = async () => {
         if (!userId || !db) return;
         try {
+             // 1. Update private settings
              await setDoc(doc(db, `artifacts/${appId}/users/${userId}/Settings`, 'profile'), {
                 startDate,
                 baseTrainingDays: Number(baseTrainingDays),
                 nickname
             });
-            // Update the user index as well for Admin view
-            await setDoc(doc(db, `artifacts/${appId}/users`, userId), {
+            
+            // 2. Update Public User Index for Admin
+            await setDoc(doc(db, `artifacts/${appId}/public/data/UserIndex`, userId), {
                 email: user.email || 'anonymous',
                 nickname: nickname,
-                lastLogin: Date.now()
+                lastLogin: Date.now(),
+                uid: userId
             }, { merge: true });
 
             alert('個人設定已更新！');
@@ -1473,9 +1478,6 @@ const App = () => {
         const unsub4 = onSnapshot(query(collection(db, `artifacts/${appId}/users/${userId}/BodyMetricsDB`)), (s) => setBodyMetricsDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
         return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
     }, [isAuthReady, userId]);
-
-    // Admin logic
-    const isAdmin = currentUser?.email === ADMIN_EMAIL;
 
     if (!isAuthReady) return <div className="p-10 text-center">Loading...</div>;
 
