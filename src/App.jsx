@@ -1059,19 +1059,32 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
     // Manual Menu Selection Logic (to prevent overwriting draft on tab switch)
     const handleMenuChange = (e) => {
         const newId = e.target.value;
-        setSelectedDailyPlanId(newId);
         
-        // 如果選的是空白，不動作
-        if (!newId) return;
+        // Handle "Clear/Reset" selection (value is empty string)
+        if (!newId) {
+             if (currentLog.length > 0) {
+                 if (confirm("切換至空白將清空目前的紀錄，確定嗎？")) {
+                     setSelectedDailyPlanId('');
+                     setCurrentLog([]);
+                 }
+                 // If cancel, do nothing (select will revert on re-render because state didn't change)
+             } else {
+                 setSelectedDailyPlanId('');
+                 setCurrentLog([]);
+             }
+             return;
+        }
 
+        // Logic for selecting a specific plan
         // Only overwrite currentLog when user explicitly changes the menu
         const plan = plansDB.find(p => p.id === newId);
         if (plan) {
             if (currentLog.length > 0 && !confirm("載入新菜單將會覆蓋目前的紀錄，確定嗎？")) {
                 // 如果取消，把下拉選單選回原本的 (或是空的)
-                e.target.value = selectedDailyPlanId;
+                // Since this is a controlled component, we just don't update state.
                 return;
             }
+            setSelectedDailyPlanId(newId);
             setCurrentLog(plan.movements.map(m => ({ 
                 order: 0, 
                 movementName: m.name, 
@@ -1118,7 +1131,7 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
                 <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="border rounded-lg p-2 text-sm" />
                 <button onClick={() => setIsBodyMetricsModalOpen(true)} className="p-2 bg-indigo-100 rounded-full text-indigo-600"><Scale className="w-5 h-5" /></button>
                 <select value={selectedDailyPlanId || ''} onChange={handleMenuChange} className="p-2 border rounded-lg text-sm bg-white w-1/3 text-gray-700">
-                    <option value="">载入菜單</option>
+                    <option value="">載入菜單</option>
                     {plansDB.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
             </div>
