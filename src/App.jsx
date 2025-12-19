@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -15,7 +15,7 @@ import {
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw, GripVertical
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -323,6 +323,7 @@ const AdminScreen = ({ db, appId }) => {
                 setUsers(userList);
             } catch (error) {
                 console.error("Admin fetch error:", error);
+                alert("無法讀取用戶列表，請確認資料庫權限設定。");
             } finally {
                 setIsLoading(false);
             }
@@ -880,6 +881,23 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
     const [filterBodyPart, setFilterBodyPart] = useState('');
     const bodyParts = ['胸', '背', '腿', '肩', '手臂', '核心', '全身'];
 
+    // Drag and Drop Logic
+    const dragItem = useRef(null);
+    const dragOverItem = useRef(null);
+
+    const handleSort = () => {
+        let _planMovements = [...planMovements];
+        // remove and save the dragged item content
+        const draggedItemContent = _planMovements.splice(dragItem.current, 1)[0];
+        // switch the position
+        _planMovements.splice(dragOverItem.current, 0, draggedItemContent);
+        // reset the position ref
+        dragItem.current = null;
+        dragOverItem.current = null;
+        // update the actual array
+        setPlanMovements(_planMovements);
+    };
+
     useEffect(() => {
         const plan = editingPlanId ? plansDB.find(p => p.id === editingPlanId) : null;
         setPlanName(plan ? plan.name : '');
@@ -935,7 +953,25 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
         return (
             <div className="space-y-4">
                 <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-md"><input type="text" value={planName} onChange={(e) => setPlanName(e.target.value)} className="text-xl font-bold w-2/3 p-2 border-b-2 outline-none" placeholder="菜單名稱" /><div className="flex space-x-2"><button onClick={() => {setEditingPlanId(null); setIsCreating(false);}} className="p-2 bg-gray-200 rounded-full"><X className="w-5 h-5"/></button><button onClick={handleSave} className="p-2 bg-indigo-600 text-white rounded-full"><Save className="w-5 h-5"/></button></div></div>
-                <div className="space-y-3">{planMovements.map((m, i) => (<div key={i} className="flex items-center space-x-3 bg-white p-3 rounded-xl shadow-sm"><div className="flex-grow font-bold">{m.name}</div><input type="number" value={m.sets} onChange={(e)=>handleMovementUpdate(i, 'sets', e.target.value)} className="w-12 p-1 border rounded text-center"/>x<input type="number" value={m.targetReps} onChange={(e)=>handleMovementUpdate(i, 'targetReps', e.target.value)} className="w-12 p-1 border rounded text-center"/><button onClick={()=>setPlanMovements(planMovements.filter((_,idx)=>idx!==i))} className="text-red-500"><Trash2 className="w-5 h-5"/></button></div>))}</div>
+                <div className="space-y-3">
+                    {planMovements.map((m, i) => (
+                        <div 
+                            key={i} 
+                            className="flex items-center space-x-3 bg-white p-3 rounded-xl shadow-sm cursor-move"
+                            draggable
+                            onDragStart={(e) => (dragItem.current = i)}
+                            onDragEnter={(e) => (dragOverItem.current = i)}
+                            onDragEnd={handleSort}
+                            onDragOver={(e) => e.preventDefault()}
+                        >
+                            <div className="flex-grow font-bold">{m.name}</div>
+                            <input type="number" value={m.sets} onChange={(e)=>handleMovementUpdate(i, 'sets', e.target.value)} className="w-12 p-1 border rounded text-center"/>x<input type="number" value={m.targetReps} onChange={(e)=>handleMovementUpdate(i, 'targetReps', e.target.value)} className="w-12 p-1 border rounded text-center"/><button onClick={()=>setPlanMovements(planMovements.filter((_,idx)=>idx!==i))} className="text-red-500"><Trash2 className="w-5 h-5"/></button>
+                            <div className="text-gray-400 cursor-grab active:cursor-grabbing px-2">
+                                <GripVertical className="w-5 h-5" />
+                            </div>
+                        </div>
+                    ))}
+                </div>
                 <div className="bg-white p-4 rounded-xl shadow-md border-t">
                     <h4 className="font-bold mb-2">新增動作</h4>
                     {/* MenuScreen: Body Part Filter Dropdown */}
