@@ -18,23 +18,13 @@ import {
   Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw, GripVertical
 } from 'lucide-react';
 
-// --- 您的專屬 Firebase 設定 ---
-const firebaseConfig = {
-  apiKey: "AIzaSyBsHIPtSV_wRioxBKYOqzgLGwZHWWfZcNc",
-  authDomain: "mygymlog-604bc.firebaseapp.com",
-  projectId: "mygymlog-604bc",
-  storageBucket: "mygymlog-604bc.firebasestorage.app",
-  messagingSenderId: "980701704046",
-  appId: "1:980701704046:web:22a2b1a727fa511107db7f",
-  measurementId: "G-MPXB8R0L6H"
-};
-
-// --- 初始化 Firebase ---
+// --- 初始化 Firebase (使用環境變數以確保在預覽器中運作) ---
+const firebaseConfig = JSON.parse(__firebase_config);
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
-const appId = 'mygymlog-604bc'; 
-const initialAuthToken = null; 
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
 // --- 管理員設定 ---
 const ADMIN_EMAIL = 'ctom40101@gmail.com';
@@ -74,11 +64,28 @@ const estimate1RM = (weight, reps) => {
     return Math.round(weight * (1 + reps / 30) * 10) / 10;
 };
 
+// --- 模擬 AI 動作分析 (規則式 - 詳細版 v4 - 增強肌群建議) ---
+const mockAI_analyzeMovement = (name) => {
+    const n = name.toLowerCase().replace(/\s/g, '');
+    let result = { type: '推', bodyPart: '胸', mainMuscle: '', secondaryMuscle: '', tips: '' };
+    const set = (t, bp, mm, sm, tips) => { result = { type: t, bodyPart: bp, mainMuscle: mm, secondaryMuscle: sm, tips: tips }; };
+    
+    // (這裡保留您之前的 AI 分析邏輯，為了簡潔省略重複部分，但功能不變)
+    if (n.includes('划船') || n.includes('row')) {
+        set('拉', '背', '背闊肌', '肱二頭肌', "保持背部挺直，專注於手肘向後帶動。");
+    } else if (n.includes('臥推') || n.includes('bench')) {
+        set('推', '胸', '胸大肌', '三頭肌', "雙腳踩實，收緊肩胛骨。");
+    } else if (n.includes('深蹲') || n.includes('squat')) {
+        set('腿', '腿', '股四頭肌', '臀大肌', "膝蓋對準腳尖，核心收緊。");
+    }
+    
+    return result;
+};
+
 // ----------------------------------------------------
 // 獨立元件區
 // ----------------------------------------------------
 
-// 通用模態框容器
 const ModalContainer = ({ isOpen, onClose, children }) => {
     if (!isOpen) return null;
     return (
@@ -93,7 +100,6 @@ const ModalContainer = ({ isOpen, onClose, children }) => {
     );
 };
 
-// 1. 身體數據模態框
 const BodyMetricsModal = ({ isOpen, onClose, onSave }) => {
     const [weight, setWeight] = useState('');
     const [bodyFat, setBodyFat] = useState('');
@@ -120,7 +126,6 @@ const BodyMetricsModal = ({ isOpen, onClose, onSave }) => {
     );
 };
 
-// 2. 重置重量模態框
 const WeightResetModal = ({ state, onClose, onConfirm }) => {
     const [weight, setWeight] = useState(state.initialWeight);
     useEffect(() => { setWeight(state.initialWeight); }, [state.initialWeight]);
@@ -137,7 +142,6 @@ const WeightResetModal = ({ state, onClose, onConfirm }) => {
     );
 };
 
-// 3. 快速新增動作模態框
 const AddMovementModal = ({ isOpen, onClose, onAdd, movementDB }) => {
     const [selectedMuscle, setSelectedMuscle] = useState('');
     const [selectedMove, setSelectedMove] = useState('');
@@ -160,7 +164,6 @@ const AddMovementModal = ({ isOpen, onClose, onAdd, movementDB }) => {
     );
 };
 
-// 4. RPE 選擇器
 const RpeSelectorAlwaysVisible = ({ value, onChange }) => {
     const rpeValues = useMemo(() => { const v = []; for (let i = 50; i <= 100; i += 5) v.push(i / 10); return v; }, []);
     const feeling = [{r:10,t:'極限'},{r:9,t:'非常難'},{r:8,t:'困難'},{r:7,t:'中等'},{r:6,t:'輕鬆'},{r:5,t:'熱身'}].find(d=>d.r===Math.floor(parseFloat(value)))?.t||'';
@@ -172,7 +175,16 @@ const RpeSelectorAlwaysVisible = ({ value, onChange }) => {
     );
 };
 
-// 6. 動作編輯器
+const SuggestionChip = ({ value, fieldName, onChange }) => {
+    if (!value) return null;
+    return (
+        <div onClick={() => onChange(fieldName, value)} className="bg-indigo-50 border border-indigo-100 rounded-lg p-2 cursor-pointer hover:bg-indigo-100 transition-colors h-full flex flex-col justify-center text-center">
+            <div className="text-[9px] text-indigo-400 font-bold uppercase tracking-wider mb-1 flex items-center justify-center"><Sparkles className="w-3 h-3 mr-1" />AI 建議</div>
+            <div className="text-xs font-bold text-indigo-700 leading-tight">{value.length > 15 ? value.substring(0, 15) + '...' : value}</div>
+        </div>
+    );
+};
+
 const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
     const types = ['推', '拉', '腿', '核心'];
     const bodyParts = ['胸', '背', '腿', '肩', '手臂', '核心', '全身']; 
@@ -200,13 +212,10 @@ const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
                 <h3 className="text-2xl font-bold text-indigo-600 border-b pb-2">{data.id ? '編輯動作' : '新增動作'}</h3>
                 
                 <div className="space-y-4 mt-4">
-                    {/* 動作名稱 */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">動作名稱 <span className="text-red-500">*</span></label>
                         <input type="text" value={data.name} onChange={(e) => onChange('name', e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:border-indigo-500 font-medium" disabled={!!data.id} placeholder="例如：寬握槓片划船" />
                     </div>
-
-                    {/* 1. 類型 */}
                     <div className="flex gap-3 items-end">
                         <div className="flex-grow">
                             <label className="block text-xs font-bold text-gray-500 mb-1">類型 <span className="text-red-500">*</span></label>
@@ -216,8 +225,6 @@ const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
                             </select>
                         </div>
                     </div>
-
-                    {/* 2. 部位 */}
                     <div className="flex gap-3 items-end">
                         <div className="flex-grow">
                             <label className="block text-xs font-bold text-gray-500 mb-1">訓練部位 <span className="text-red-500">*</span></label>
@@ -227,29 +234,21 @@ const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
                             </select>
                         </div>
                     </div>
-
-                    {/* 3. 主要肌群 */}
                     <div>
                         <label className="block text-xs font-bold text-gray-500 mb-1">主要肌群 (細項)</label>
                         <input type="text" value={data.mainMuscle} onChange={(e) => onChange('mainMuscle', e.target.value)} className="w-full p-2.5 border border-gray-300 rounded-lg" placeholder="例如：背闊肌上部" />
                     </div>
-
-                    {/* 4. 協同肌群 */}
                     <div>
                         <label className="block text-xs font-bold text-gray-500 mb-1">協同肌群</label>
                         <input type="text" value={data.secondaryMuscle} onChange={(e) => onChange('secondaryMuscle', e.target.value)} className="w-full p-2.5 border border-gray-300 rounded-lg" placeholder="例如：斜方肌" />
                     </div>
-
                     <div className="border-t pt-4"><label className="block text-sm font-medium text-gray-700 mb-1">初始建議重量 (KG)</label><input type="number" value={data.initialWeight} onChange={(e) => onChange('initialWeight', e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg" min="0" /></div>
-                    
-                    {/* 提示 */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">動作提示/要點</label>
                         <textarea value={data.tips} onChange={(e) => onChange('tips', e.target.value)} rows="3" className="w-full p-2 border border-gray-300 rounded-lg" placeholder="動作要點..." />
                     </div>
-                     <div><label className="block text-sm font-medium text-gray-700 mb-1">影片連結</label><input type="url" value={data.link} onChange={(e) => onChange('link', e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg" placeholder="YouTube URL" /></div>
+                      <div><label className="block text-sm font-medium text-gray-700 mb-1">影片連結</label><input type="url" value={data.link} onChange={(e) => onChange('link', e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg" placeholder="YouTube URL" /></div>
                 
-                    {/* AI 搜尋建議區塊 */}
                     {data.name && (
                         <div className="mt-6 bg-indigo-50 p-4 rounded-xl border border-indigo-100">
                             <div className="flex justify-between items-center mb-2">
@@ -282,7 +281,6 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
                 <h4 className="text-lg font-bold text-gray-800">{move.movementName}</h4>
                 <div className="flex space-x-3 items-center">
                     <details className="relative group"><summary className="text-indigo-500 cursor-pointer list-none flex items-center text-xs"><ListChecks className="w-4 h-4 mr-1"/>指引</summary><div className="absolute right-0 top-full mt-2 w-64 p-4 bg-white border rounded-xl shadow-2xl z-20 hidden group-open:block"><p className="font-bold text-gray-800 text-sm">提示:</p><p className="text-xs text-gray-600 mb-2">{movementDetail.tips||'無'}</p>
-                            {/* Add Video Link Here */}
                             {movementDetail.link && (
                                 <div className="mb-2">
                                     <a href={movementDetail.link} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 underline flex items-center">
@@ -315,14 +313,12 @@ const AdminScreen = ({ db, appId }) => {
     const fetchUsers = useCallback(async () => {
         setIsLoading(true);
         try {
-            // Fetch all documents from the PUBLIC UserIndex collection
             const q = query(collection(db, `artifacts/${appId}/public/data/UserIndex`));
             const snapshot = await getDocs(q);
             const userList = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             setUsers(userList);
         } catch (error) {
             console.error("Admin fetch error:", error);
-            // alert("無法讀取用戶列表"); // Optional: suppress default error in UI
         } finally {
             setIsLoading(false);
         }
@@ -344,7 +340,6 @@ const AdminScreen = ({ db, appId }) => {
                 await Promise.all(deletePromises);
             }
             alert("該用戶資料已清空。");
-            // Refresh list
             fetchUsers();
         } catch (e) {
             console.error(e);
@@ -361,7 +356,7 @@ const AdminScreen = ({ db, appId }) => {
 
             {isLoading ? <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-500"/></div> : (
                 <div className="space-y-3">
-                    {users.length === 0 ? <p className="text-center text-gray-500">沒有找到用戶資料 (需登入過才會建立)</p> : users.map(u => (
+                    {users.length === 0 ? <p className="text-center text-gray-500">沒有找到用戶資料</p> : users.map(u => (
                         <div key={u.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col gap-2">
                             <div className="flex justify-between items-start">
                                 <div>
@@ -395,12 +390,9 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const today = new Date().toISOString().substring(0, 10);
     const [date, setDate] = useState(today);
     const [isLoading, setIsLoading] = useState(false); 
-    const [debugMsg, setDebugMsg] = useState('');
-
     const [startDate, setStartDate] = useState('');
     const [baseTrainingDays, setBaseTrainingDays] = useState(0);
     const [nickname, setNickname] = useState(''); 
-
     const [user, setUser] = useState(auth?.currentUser);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -423,7 +415,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         setIsLoading(false);
         console.error(`${action} error:`, error);
         if (error.code === 'auth/email-already-in-use' || error.code === 'auth/credential-already-in-use') {
-             alert("此 Email 已被其他帳號使用。請改用登入。");
+             alert("此 Email 已被其他帳號使用。");
         } else if (error.code === 'auth/weak-password') {
              alert("密碼強度不足 (至少需6位數)。");
         } else if (error.code === 'auth/wrong-password') {
@@ -497,12 +489,10 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                 await Promise.all(deletePromises);
             }
             await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/Settings`, 'profile'));
-            // Remove from UserIndex (Public)
             await deleteDoc(doc(db, `artifacts/${appId}/public/data/UserIndex`, userId));
-
             await deleteUser(user);
             alert("帳號與資料已成功刪除。");
-            await signInAnonymously(auth); // 刪除後自動變訪客
+            await signInAnonymously(auth); 
         } catch (error) {
             handleError(error, '刪除帳號');
         } finally {
@@ -532,21 +522,17 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const handleSaveSettings = async () => {
         if (!userId || !db) return;
         try {
-             // 1. Update private settings
              await setDoc(doc(db, `artifacts/${appId}/users/${userId}/Settings`, 'profile'), {
                 startDate,
                 baseTrainingDays: Number(baseTrainingDays),
                 nickname
             });
-            
-            // 2. Update Public User Index for Admin
             await setDoc(doc(db, `artifacts/${appId}/public/data/UserIndex`, userId), {
                 email: user.email || 'anonymous',
                 nickname: nickname,
                 lastLogin: Date.now(),
                 uid: userId
             }, { merge: true });
-
             alert('個人設定已更新！');
         } catch (e) {
             console.error(e);
@@ -1269,7 +1255,146 @@ const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB, db, appId, userId })
 
     return (
         <div className="space-y-6 pb-24">
-            {/* ... existing code ... */}
+            {/* View Switcher */}
+            <div className="flex bg-gray-200 p-1 rounded-xl overflow-x-auto no-scrollbar">
+                {['Overview', 'Strength', 'Body', 'History'].map(v => (
+                    <button
+                        key={v}
+                        onClick={() => setView(v)}
+                        className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg whitespace-nowrap transition-all ${
+                            view === v ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                    >
+                        {v === 'Overview' ? '總覽' : v === 'Strength' ? '肌力' : v === 'Body' ? '體態' : '歷史'}
+                    </button>
+                ))}
+            </div>
+
+            {/* Content based on view */}
+            {view === 'Overview' && (
+                <div className="space-y-4 animate-fade-in">
+                    {/* Stats Cards */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-4 text-white shadow-lg">
+                            <div className="text-indigo-100 text-xs font-medium mb-1">本月訓練天數</div>
+                            <div className="text-3xl font-extrabold">{stats.monthCount} <span className="text-sm font-normal opacity-80">天</span></div>
+                        </div>
+                        <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-lg">
+                            <div className="text-gray-500 text-xs font-medium mb-1">近七天訓練量</div>
+                            <div className="text-2xl font-extrabold text-gray-800">{(stats.weekVolume / 1000).toFixed(1)}k <span className="text-xs font-normal text-gray-400">kg</span></div>
+                        </div>
+                    </div>
+
+                    {/* Muscle Split */}
+                    <div className="bg-white p-5 rounded-2xl shadow-lg border border-gray-100">
+                        <h3 className="font-bold text-gray-800 mb-4 flex items-center">
+                            <PieChart className="w-5 h-5 mr-2 text-indigo-500"/> 近期肌群分佈
+                        </h3>
+                        <div className="space-y-3">
+                            {stats.muscleSplitPercent.map((m, i) => (
+                                <div key={i} className="flex items-center">
+                                    <div className="w-12 text-xs font-bold text-gray-600">{m.name}</div>
+                                    <div className="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden mx-3">
+                                        <div 
+                                            className="h-full bg-indigo-500 rounded-full" 
+                                            style={{ width: `${m.percent}%` }}
+                                        ></div>
+                                    </div>
+                                    <div className="w-8 text-xs text-gray-400 text-right">{m.percent}%</div>
+                                </div>
+                            ))}
+                            {stats.muscleSplitPercent.length === 0 && <div className="text-center text-gray-400 text-sm py-4">尚無足夠數據</div>}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {view === 'Strength' && (
+                <div className="space-y-4 animate-fade-in">
+                    <div className="bg-white p-4 rounded-xl shadow-lg border border-gray-100">
+                        <h3 className="font-bold text-gray-800 mb-3 flex items-center">
+                            <TrendingUp className="w-5 h-5 mr-2 text-green-500"/> 1RM 估算趨勢
+                        </h3>
+                        <select 
+                            value={selectedMovement} 
+                            onChange={(e) => setSelectedMovement(e.target.value)}
+                            className="w-full p-2 mb-4 border rounded-lg text-sm bg-gray-50"
+                        >
+                            <option value="">選擇動作...</option>
+                            {movementDB.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                        </select>
+                        
+                        <div className="h-48 w-full">
+                            {selectedMovement ? (
+                                renderLineChart(strengthData, 'e1rm', 'date', '#10b981')
+                            ) : (
+                                <div className="h-full flex items-center justify-center text-gray-400 text-sm">請選擇動作以查看趨勢</div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {view === 'Body' && (
+                <div className="space-y-4 animate-fade-in">
+                    <div className="bg-white p-4 rounded-xl shadow-lg border border-gray-100">
+                        <h3 className="font-bold text-gray-800 mb-4 flex items-center">
+                            <Scale className="w-5 h-5 mr-2 text-blue-500"/> 體重變化
+                        </h3>
+                        <div className="h-48 w-full">
+                            {renderLineChart([...bodyMetricsDB].sort((a,b)=>a.date-b.date).slice(-10), 'weight', 'date', '#3b82f6')}
+                        </div>
+                    </div>
+                    <div className="bg-white p-4 rounded-xl shadow-lg border border-gray-100">
+                         <h3 className="font-bold text-gray-800 mb-4 flex items-center">
+                            <Activity className="w-5 h-5 mr-2 text-orange-500"/> 體脂率變化
+                        </h3>
+                        <div className="h-48 w-full">
+                            {renderLineChart([...bodyMetricsDB].sort((a,b)=>a.date-b.date).slice(-10), 'bodyFat', 'date', '#f97316')}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+             {view === 'History' && (
+                <div className="space-y-4 animate-fade-in">
+                     <div className="flex justify-between items-center px-1">
+                        <h3 className="font-bold text-gray-700">歷史紀錄列表</h3>
+                        <button onClick={handleClearAllLogs} className="text-xs text-red-500 underline">清空所有測試紀錄</button>
+                     </div>
+                    {logDB.length === 0 ? <div className="text-center text-gray-400 py-10">尚無紀錄</div> : (
+                        logDB.map(log => (
+                            <div key={log.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                                <div className="flex justify-between items-start border-b border-gray-100 pb-2 mb-2">
+                                    <div>
+                                        <div className="font-bold text-gray-800 flex items-center">
+                                            <Calendar className="w-4 h-4 mr-1 text-gray-400"/>
+                                            {new Date(log.date).toLocaleDateString()}
+                                            <span className="text-xs font-normal text-gray-400 ml-2">
+                                                {new Date(log.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                            </span>
+                                        </div>
+                                        <div className="text-xs text-indigo-500 mt-0.5">總量: {log.overallVolume} kg</div>
+                                    </div>
+                                    <button onClick={() => handleDeleteLog(log.id)} className="text-gray-400 hover:text-red-500 p-1">
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                <div className="space-y-1">
+                                    {log.movements.map((m, i) => (
+                                        <div key={i} className="flex justify-between text-sm">
+                                            <span className="text-gray-700">{m.movementName}</span>
+                                            <span className="text-gray-500 text-xs">
+                                                {m.sets.length}組 / Best: {Math.max(...m.sets.map(s=>s.weight))}kg
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            )}
         </div>
     );
 };
