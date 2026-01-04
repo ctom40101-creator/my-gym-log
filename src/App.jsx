@@ -15,7 +15,7 @@ import {
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw, GripVertical, Camera, Image as ImageIcon, ChevronUp
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw, GripVertical, Camera, Image as ImageIcon, ChevronUp, Grid
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -205,11 +205,11 @@ const RpeSelectorAlwaysVisible = ({ value, onChange }) => {
 };
 
 // 6. 動作編輯器
-const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
+const MovementEditor = ({ isOpen, onClose, onSave, data, onChange, isProcessing }) => {
     const types = ['推', '拉', '腿', '核心'];
     const bodyParts = ['胸', '背', '腿', '肩', '手臂', '核心', '全身']; 
     
-    const aiPrompt = data.name ? `${data.name}確認英文名稱為何，並且告訴我動作類型為何(推、拉、腿、核心)，訓練部位(胸、背、腿、肩、核心、手臂、全身)以及告訴我主要肌群與協同肌群各自為何，並且告訴我這個動作的提示與要點` : '';
+    const aiPrompt = data.name ? `${data.name}確認英文名稱為何，並且告訴我動作類型為何(推、拉、腿、核心)，訓練部位(胸、背、腿、肩、核心、手臂、全身)以及告訴我主要肌群與協同肌群各自為何，最後以不分段不條列的方式敘述這個動作的提示與要點` : '';
 
     const handleCopyPrompt = () => {
         if (!aiPrompt) return;
@@ -228,7 +228,14 @@ const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
 
     return (
         <ModalContainer isOpen={isOpen} onClose={onClose}>
-            <div className="bg-white p-6">
+            <div className="bg-white p-6 relative">
+                {isProcessing && (
+                    <div className="absolute inset-0 bg-white bg-opacity-80 z-50 flex flex-col items-center justify-center rounded-xl">
+                        <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mb-2" />
+                        <span className="font-bold text-indigo-600">更新所有歷史紀錄中...</span>
+                        <span className="text-xs text-gray-500 mt-1">請勿關閉視窗</span>
+                    </div>
+                )}
                 <h3 className="text-2xl font-bold text-indigo-600 border-b pb-2">{data.id ? '編輯動作' : '新增動作'}</h3>
                 
                 <div className="space-y-4 mt-4">
@@ -242,7 +249,7 @@ const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
                             className="w-full p-3 border border-gray-300 rounded-lg focus:border-indigo-500 font-medium" 
                             placeholder="例如：寬握槓片划船" 
                         />
-                        {data.id && <p className="text-xs text-orange-500 mt-1">注意：修改名稱不會變更歷史紀錄中的舊名稱。</p>}
+                        {data.id && data.id !== data.name && <p className="text-xs text-orange-500 mt-1 font-bold">⚠️ 修改名稱將會同步更新所有歷史紀錄與菜單，需花費一點時間。</p>}
                     </div>
 
                     {/* 1. 類型 */}
@@ -301,39 +308,22 @@ const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
                         </div>
                     )}
                 </div>
-                <div className="flex justify-end space-x-3 pt-4 border-t"><button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300">取消</button><button onClick={onSave} className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700">儲存動作</button></div>
+                <div className="flex justify-end space-x-3 pt-4 border-t"><button onClick={onClose} disabled={isProcessing} className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300">取消</button><button onClick={onSave} disabled={isProcessing} className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700">儲存動作</button></div>
             </div>
         </ModalContainer>
     );
 };
 
-const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpdate, handleNoteUpdate, handleRpeUpdate, openResetModal, handlePhotoUpload }) => {
+const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpdate, handleNoteUpdate, handleRpeUpdate, openResetModal }) => {
     const history = weightHistory[move.movementName] || {};
     const lastRecord = history.lastRecord;
     const lastNote = history.lastNote; 
     const suggestion = history.suggestion || (movementDB.find(m => m.name === move.movementName)?.initialWeight || 20); 
     const totalVolume = calculateTotalVolume(move.sets);
     const movementDetail = movementDB.find(m => m.name === move.movementName) || {}; 
-    const fileInputRef = useRef(null);
-    const [isUploading, setIsUploading] = useState(false);
 
     // 建立 20 到 1 的次數陣列
     const repsOptions = useMemo(() => Array.from({length: 20}, (_, i) => 20 - i), []);
-
-    const onFileChange = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        setIsUploading(true);
-        try {
-            const base64Str = await compressImage(file);
-            handlePhotoUpload(index, base64Str);
-        } catch (error) {
-            console.error("Image upload failed", error);
-            alert("圖片處理失敗");
-        } finally {
-            setIsUploading(false);
-        }
-    };
 
     return (
         <div className="bg-white p-4 rounded-xl shadow-lg border-l-4 border-indigo-500 space-y-3">
@@ -359,38 +349,13 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
             <div className="space-y-2">{move.sets.map((set, si) => (<div key={si} className="flex items-center space-x-2"><span className="w-8 text-xs text-gray-400 font-bold">S{si+1}</span><div className="flex-grow flex space-x-2"><input type="number" value={set.weight} onChange={(e)=>handleSetUpdate(index,si,'weight',e.target.value)} className="w-full p-2 border rounded-lg text-center font-bold" /><select value={set.reps} onChange={(e)=>handleSetUpdate(index,si,'reps',e.target.value)} className="w-full p-2 border rounded-lg text-center font-bold bg-white">{repsOptions.map(num => <option key={num} value={num}>{num}</option>)}</select></div></div>))}</div>
             <RpeSelectorAlwaysVisible value={move.rpe || 8} onChange={(v) => handleRpeUpdate(index, v)} />
             
-            {/* Note & Photo Section */}
+            {/* Note Section */}
             <div className="text-gray-600 mt-2 space-y-2">
                 {lastNote && <div className="bg-yellow-50 p-2 rounded-lg text-xs border border-yellow-100">上次: {history.lastNote}</div>}
                 
                 <div className="flex gap-2">
                     <textarea placeholder="心得..." value={move.note || ''} onChange={(e) => handleNoteUpdate(index, e.target.value)} rows="1" className="flex-grow p-2 border rounded-lg text-sm" />
-                    
-                    {/* Photo Upload Button */}
-                    <div className="flex flex-col items-center justify-center">
-                        <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={onFileChange} />
-                        <button 
-                            onClick={() => fileInputRef.current.click()} 
-                            className={`p-2 rounded-lg border ${move.photo ? 'bg-indigo-100 text-indigo-600 border-indigo-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}
-                            title="上傳照片"
-                        >
-                            {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}
-                        </button>
-                    </div>
                 </div>
-
-                {/* Photo Preview */}
-                {move.photo && (
-                    <div className="relative mt-2">
-                        <img src={move.photo} alt="Training Log" className="w-full h-32 object-cover rounded-lg border border-gray-200" />
-                        <button 
-                            onClick={() => handlePhotoUpload(index, null)}
-                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 shadow-md opacity-80 hover:opacity-100"
-                        >
-                            <X className="w-3 h-3" />
-                        </button>
-                    </div>
-                )}
             </div>
 
             <div className="text-right text-xs font-bold text-indigo-400">總量: {totalVolume} kg</div>
@@ -683,6 +648,11 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     };
 
     const sortedMetrics = [...bodyMetricsDB].sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    // 照片牆資料 - 篩選有照片的紀錄
+    const logsWithPhotos = useMemo(() => {
+        return logDB.filter(log => log.photo && !log.isReset);
+    }, [logDB]);
 
     return (
         <div className="space-y-6">
@@ -751,6 +721,25 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
                     </div>
                 )}
             </div>
+            
+            {/* 照片牆區塊 */}
+            {logsWithPhotos.length > 0 && (
+                <div className="bg-white p-6 rounded-xl shadow-lg border border-indigo-100">
+                    <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center"><Grid className="w-5 h-5 mr-2 text-indigo-500" />照片牆</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {logsWithPhotos.slice(0, 6).map((log) => (
+                            <div key={log.id} className="relative aspect-square rounded-lg overflow-hidden border border-gray-200">
+                                <img src={log.photo} alt="Training" className="w-full h-full object-cover" />
+                                <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-[10px] p-1 text-center truncate">
+                                    {new Date(log.date).toLocaleDateString()}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {logsWithPhotos.length > 6 && <p className="text-center text-xs text-gray-400 mt-2">僅顯示最近 6 張</p>}
+                </div>
+            )}
+
             <div className="bg-white p-6 rounded-xl shadow-lg border border-indigo-100">
                 <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center"><Trophy className="w-5 h-5 mr-2 text-yellow-500" />個人資訊與旅程</h3>
                 <div className="grid grid-cols-2 gap-4 mb-4">
@@ -802,7 +791,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     );
 };
 
-const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
+const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId, logDB, plansDB }) => {
     const [filter, setFilter] = useState('');
     const [isEditing, setIsEditing] = useState(false);
     const [isBatchMode, setIsBatchMode] = useState(false); 
@@ -810,6 +799,8 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
     const [lastImportedIds, setLastImportedIds] = useState([]); 
     const [editingMove, setEditingMove] = useState(null); 
     const [nickname, setNickname] = useState('');
+    const [isProcessing, setIsProcessing] = useState(false); // New state for batch update loading
+
     useEffect(() => {
         if (!userId) return;
         const fetchNickname = async () => {
@@ -939,20 +930,110 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId }) => {
         reader.readAsText(file);
         e.target.value = null; 
     };
+
     const handleSaveMovement = async () => {
         if (!db) return;
-        if (!editingMove.name?.trim()) return alert("請輸入動作名稱");
+        const newName = editingMove.name?.trim();
+        if (!newName) return alert("請輸入動作名稱");
         if (!editingMove.type) return alert("請選擇動作類型");
         if (!editingMove.bodyPart) return alert("請選擇訓練部位");
-        const docId = editingMove.id || editingMove.name.trim(); 
-        try { await setDoc(doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, docId), { ...editingMove, initialWeight: Number(editingMove.initialWeight||20) }); setIsEditing(false); setEditingMove(null); if (!editingMove.id) setFilter(''); } catch(e) { console.error(e); }
+
+        const oldName = editingMove.id; // editingMove.id holds the original doc ID
+        const isRenaming = oldName && oldName !== newName;
+
+        if (isRenaming) {
+            if (!confirm(`您確定要將 "${oldName}" 重新命名為 "${newName}" 嗎？\n\n這將會：\n1. 更新動作庫\n2. 同步修改所有包含此動作的歷史紀錄 (Log)\n3. 同步修改所有包含此動作的菜單 (Menu)\n\n此操作無法復原。`)) return;
+            
+            setIsProcessing(true);
+            try {
+                const batch = writeBatch(db);
+
+                // 1. Create new movement doc & Delete old
+                const newRef = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, newName);
+                const oldRef = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, oldName);
+                
+                batch.set(newRef, { ...editingMove, name: newName, initialWeight: Number(editingMove.initialWeight||0) });
+                batch.delete(oldRef);
+
+                // 2. Scan and Update Logs
+                // Note: Client-side filtering is used here because Firestore array queries are limited for partial object matches.
+                // Assuming logDB and plansDB are passed as props from App (snapshot data).
+                
+                logDB.forEach(log => {
+                    if (log.movements && Array.isArray(log.movements)) {
+                        let hasChange = false;
+                        const updatedMovements = log.movements.map(m => {
+                            if (m.movementName === oldName) {
+                                hasChange = true;
+                                return { ...m, movementName: newName };
+                            }
+                            return m;
+                        });
+
+                        // Check reset logic too
+                        if (log.isReset && log.movementName === oldName) {
+                             const logRef = doc(db, `artifacts/${appId}/users/${userId}/LogDB`, log.id);
+                             batch.update(logRef, { movementName: newName });
+                        }
+
+                        if (hasChange) {
+                            const logRef = doc(db, `artifacts/${appId}/users/${userId}/LogDB`, log.id);
+                            batch.update(logRef, { movements: updatedMovements });
+                        }
+                    }
+                });
+
+                // 3. Scan and Update Plans
+                plansDB.forEach(plan => {
+                    if (plan.movements && Array.isArray(plan.movements)) {
+                        let hasChange = false;
+                        const updatedMovements = plan.movements.map(m => {
+                            if (m.name === oldName) {
+                                hasChange = true;
+                                return { ...m, name: newName };
+                            }
+                            return m;
+                        });
+
+                        if (hasChange) {
+                            const planRef = doc(db, `artifacts/${appId}/users/${userId}/PlansDB`, plan.id);
+                            batch.update(planRef, { movements: updatedMovements });
+                        }
+                    }
+                });
+
+                await batch.commit();
+                alert(`已成功將 "${oldName}" 更名為 "${newName}"，並同步更新了相關紀錄。`);
+                setIsEditing(false);
+                setEditingMove(null);
+                setFilter(''); 
+
+            } catch (e) {
+                console.error("Rename Error:", e);
+                alert("更新失敗，請稍後再試。");
+            } finally {
+                setIsProcessing(false);
+            }
+
+        } else {
+            // Normal Save (Add new or Update existing without rename)
+            const docId = oldName || newName; 
+            try { 
+                await setDoc(doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, docId), { ...editingMove, initialWeight: Number(editingMove.initialWeight||0) }); 
+                setIsEditing(false); 
+                setEditingMove(null); 
+                if (!oldName) setFilter(''); 
+            } catch(e) { 
+                console.error(e); 
+            }
+        }
     };
     const handleDeleteMovement = async (id) => { if (confirm('刪除?')) await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, id)); };
 
     return (
         <>
-            <MovementEditor isOpen={isEditing} onClose={() => setIsEditing(false)} onSave={handleSaveMovement} data={editingMove || {}} onChange={(f, v) => setEditingMove(p => ({ ...p, [f]: v }))} />
-            <div className="flex gap-2 mb-4"><button onClick={() => {setEditingMove({ name: '', type: '', bodyPart: '', mainMuscle: '', secondaryMuscle: '', tips: '', link: '', initialWeight: 20 }); setIsEditing(true);}} className="flex-1 bg-teal-500 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>新增動作</button><button onClick={() => setIsBatchMode(!isBatchMode)} className={`px-4 rounded-xl font-bold border ${isBatchMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-600'}`}>{isBatchMode ? '完成' : '管理'}</button></div>
+            <MovementEditor isOpen={isEditing} onClose={() => setIsEditing(false)} onSave={handleSaveMovement} data={editingMove || {}} onChange={(f, v) => setEditingMove(p => ({ ...p, [f]: v }))} isProcessing={isProcessing} />
+            <div className="flex gap-2 mb-4"><button onClick={() => {setEditingMove({ name: '', type: '', bodyPart: '', mainMuscle: '', secondaryMuscle: '', tips: '', link: '', initialWeight: 0 }); setIsEditing(true);}} className="flex-1 bg-teal-500 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>新增動作</button><button onClick={() => setIsBatchMode(!isBatchMode)} className={`px-4 rounded-xl font-bold border ${isBatchMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-600'}`}>{isBatchMode ? '完成' : '管理'}</button></div>
             {isBatchMode && (<div className="bg-gray-100 p-3 rounded-xl mb-4 animate-fade-in"><div className="flex flex-col gap-3"><div className="flex justify-between items-center border-b pb-2 border-gray-200"><div className="text-sm font-bold text-gray-600">匯出動作庫</div><button onClick={handleExportCSV} className="bg-white border border-indigo-200 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-indigo-50"><Download className="w-3 h-3 mr-1" /> 匯出 CSV (含暱稱)</button></div><div className="flex flex-col gap-2"><div className="text-sm font-bold text-gray-600">匯入動作</div><div className="flex items-center gap-2 mb-1"><input type="checkbox" id="importNick" checked={importWithNickname} onChange={e=>setImportWithNickname(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" /><label htmlFor="importNick" className="text-xs text-gray-600">保留來源註記 (來自 XXX)</label></div><div className="flex gap-2"><label className="flex-1 cursor-pointer bg-indigo-600 text-white px-3 py-2 rounded-lg text-xs font-bold flex items-center justify-center hover:bg-indigo-700 shadow-sm"><Upload className="w-3 h-3 mr-1" /> 選擇檔案匯入<input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} /></label><button onClick={handleDownloadSampleCSV} className="bg-white border border-gray-300 text-gray-500 px-3 py-2 rounded-lg text-xs font-bold hover:bg-gray-50">下載範例</button></div></div><div className="flex justify-between items-center pt-2 border-t border-gray-200">{lastImportedIds.length > 0 ? (<button onClick={handleUndoImport} className="bg-yellow-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center shadow-sm animate-pulse"><Undo2 className="w-3 h-3 mr-1" /> 復原上一次匯入</button>) : <div></div>}{selectedItems.size > 0 && (<button onClick={handleBatchDelete} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center"><Trash2 className="w-3 h-3 mr-1" /> 刪除 ({selectedItems.size})</button>)}</div></div></div>)}
             <div className="flex justify-between space-x-2 mb-4 overflow-x-auto"><button onClick={() => setFilter('')} className={`p-2 rounded-full text-sm font-semibold whitespace-nowrap ${!filter ? 'bg-indigo-600 text-white' : 'bg-white'}`}>全部</button>{categories.map(t => <button key={t} onClick={() => setFilter(t)} className={`p-2 rounded-full text-sm font-semibold whitespace-nowrap ${filter === t ? 'bg-indigo-600 text-white' : 'bg-white'}`}>{t}</button>)}</div>
             {isBatchMode && (
@@ -1173,6 +1254,11 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
     const [resetModalState, setResetModalState] = useState({ isOpen: false });
     const [addMoveModalOpen, setAddMoveModalOpen] = useState(false);
     const [isBodyMetricsModalOpen, setIsBodyMetricsModalOpen] = useState(false);
+    
+    // Session Photo State
+    const [sessionPhoto, setSessionPhoto] = useState(null);
+    const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+    const fileInputRef = useRef(null);
 
     // Manual Menu Selection Logic (to prevent overwriting draft on tab switch)
     const handleMenuChange = (e) => {
@@ -1184,11 +1270,13 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
                  if (confirm("切換至空白將清空目前的紀錄，確定嗎？")) {
                      setSelectedDailyPlanId('');
                      setCurrentLog([]);
+                     setSessionPhoto(null);
                  }
                  // If cancel, do nothing (select will revert on re-render because state didn't change)
              } else {
                  setSelectedDailyPlanId('');
                  setCurrentLog([]);
+                 setSessionPhoto(null);
              }
              return;
         }
@@ -1203,6 +1291,7 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
                 return;
             }
             setSelectedDailyPlanId(newId);
+            setSessionPhoto(null);
             setCurrentLog(plan.movements.map(m => ({ 
                 order: 0, 
                 movementName: m.name, 
@@ -1221,11 +1310,20 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
     const handleNoteUpdate = (mi, v) => { const newLog = [...currentLog]; newLog[mi].note = v; setCurrentLog(newLog); };
     const handleRpeUpdate = (mi, v) => { const newLog = [...currentLog]; newLog[mi].rpe = v; setCurrentLog(newLog); };
     
-    // Handle photo upload update in state
-    const handlePhotoUpload = (mi, base64) => {
-        const newLog = [...currentLog];
-        newLog[mi].photo = base64; // Store base64 string directly
-        setCurrentLog(newLog);
+    // Handle session photo upload
+    const onFileChange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setIsUploadingPhoto(true);
+        try {
+            const base64Str = await compressImage(file);
+            setSessionPhoto(base64Str);
+        } catch (error) {
+            console.error("Image upload failed", error);
+            alert("圖片處理失敗");
+        } finally {
+            setIsUploadingPhoto(false);
+        }
     };
 
     const handleLogSubmit = async () => {
@@ -1236,17 +1334,18 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
             date: new Date(selectedDate).getTime(), 
             userId, 
             menuId: selectedDailyPlanId || 'custom', 
+            // Include session photo at the root of the log document
+            photo: sessionPhoto || null,
             movements: active.map(m => ({ 
                 ...m, 
-                totalVolume: calculateTotalVolume(m.sets),
-                // Ensure photo is included if exists
-                photo: m.photo || null 
+                totalVolume: calculateTotalVolume(m.sets)
             })) 
         };
         const total = sub.movements.reduce((s, m) => s + m.totalVolume, 0);
         await setDoc(doc(collection(db, `artifacts/${appId}/users/${userId}/LogDB`), `${selectedDate}-${Date.now()}`), { ...sub, overallVolume: total });
         
         setCurrentLog([]); // Clear draft after submit
+        setSessionPhoto(null); // Clear photo
         setSelectedDailyPlanId(''); // Reset menu selection
         alert('訓練完成！');
         setScreen('Analysis'); // Jump to Analysis
@@ -1284,11 +1383,46 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
                         handleSetUpdate={handleSetUpdate} 
                         handleNoteUpdate={handleNoteUpdate} 
                         handleRpeUpdate={(index, val) => handleRpeUpdate(i, val)} 
-                        handlePhotoUpload={handlePhotoUpload}
                         openResetModal={(name) => setResetModalState({ isOpen: true, movementName: name, initialWeight: 20 })} 
                     />
                 ))}
+                
                 <button onClick={() => setAddMoveModalOpen(true)} className="w-full bg-teal-500 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>新增動作 (預設 4組)</button>
+                
+                {/* Session Photo Upload Section */}
+                {currentLog.length > 0 && (
+                    <div className="bg-white p-4 rounded-xl shadow-lg border border-indigo-100 mt-4">
+                        <h4 className="font-bold text-gray-700 mb-2 flex items-center"><Camera className="w-5 h-5 mr-2 text-indigo-500"/>訓練成果紀錄</h4>
+                        
+                        {!sessionPhoto ? (
+                            <div 
+                                onClick={() => fileInputRef.current.click()}
+                                className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:bg-gray-50 transition-colors"
+                            >
+                                <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={onFileChange} />
+                                {isUploadingPhoto ? (
+                                    <div className="flex justify-center text-indigo-500"><Loader2 className="w-6 h-6 animate-spin"/></div>
+                                ) : (
+                                    <div className="text-gray-400 flex flex-col items-center">
+                                        <ImageIcon className="w-8 h-8 mb-2" />
+                                        <span className="text-sm">點擊上傳本次訓練照片</span>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="relative">
+                                <img src={sessionPhoto} alt="Session" className="w-full h-48 object-cover rounded-xl" />
+                                <button 
+                                    onClick={() => setSessionPhoto(null)}
+                                    className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full shadow-md hover:bg-red-600"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {currentLog.length > 0 && <button onClick={handleLogSubmit} className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg my-4">完成訓練</button>}
             </div>
         </>
@@ -1506,6 +1640,12 @@ const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB, db, appId, userId })
                                 <button onClick={() => handleDeleteLog(log.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
                             </div>
                             
+                            {log.photo && (
+                                <div className="mb-3">
+                                    <img src={log.photo} alt="Session Record" className="w-full h-40 object-cover rounded-lg border border-gray-200" />
+                                </div>
+                            )}
+
                             {log.isReset ? (
                                 <div className="text-sm text-yellow-800 font-bold flex items-center">
                                     <RotateCcw className="w-4 h-4 mr-1"/> 重置動作：{log.movementName} {'->'} {log.resetWeight}kg
@@ -1523,11 +1663,6 @@ const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB, db, appId, userId })
                                                     <div key={si}>S{si+1}: {s.weight}kg x {s.reps}</div>
                                                 ))}
                                                 {m.note && <div className="col-span-2 text-indigo-600 mt-1">📝 {m.note}</div>}
-                                                {m.photo && (
-                                                    <div className="col-span-2 mt-2">
-                                                        <img src={m.photo} alt="log" className="w-full h-32 object-cover rounded-lg border"/>
-                                                    </div>
-                                                )}
                                             </div>
                                         </details>
                                     ))}
@@ -1701,7 +1836,7 @@ const App = () => {
         if (screen === 'Admin') return <ScreenContainer title="🛡️ 管理後台"><AdminScreen db={db} appId={appId} /></ScreenContainer>;
 
         switch (screen) {
-            case 'Library': return <ScreenContainer title="🏋️ 動作庫"><LibraryScreen weightHistory={weightHistory} movementDB={movementDB} db={db} appId={appId} userId={userId} /></ScreenContainer>;
+            case 'Library': return <ScreenContainer title="🏋️ 動作庫"><LibraryScreen weightHistory={weightHistory} movementDB={movementDB} db={db} appId={appId} userId={userId} logDB={logDB} plansDB={plansDB} /></ScreenContainer>;
             case 'Menu': return <ScreenContainer title="📋 菜單"><MenuScreen setSelectedDailyPlanId={setSelectedDailyPlanId} selectedDailyPlanId={selectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} db={db} userId={userId} appId={appId} setScreen={setScreen} currentLog={currentLog} setCurrentLog={setCurrentLog} /></ScreenContainer>;
             case 'Analysis': return <ScreenContainer title="📈 分析"><AnalysisScreen logDB={logDB} bodyMetricsDB={bodyMetricsDB} movementDB={movementDB} db={db} appId={appId} userId={userId} /></ScreenContainer>;
             case 'Profile': return <ScreenContainer title="👤 個人"><ProfileScreen bodyMetricsDB={bodyMetricsDB} userId={userId} db={db} appId={appId} logDB={logDB} auth={auth} /></ScreenContainer>;
