@@ -209,7 +209,7 @@ const MovementEditor = ({ isOpen, onClose, onSave, data, onChange, isProcessing 
     const types = ['推', '拉', '腿', '核心'];
     const bodyParts = ['胸', '背', '腿', '肩', '手臂', '核心', '全身']; 
     
-    const aiPrompt = data.name ? `${data.name}確認英文名稱為何，並且告訴我動作類型為何(推、拉、腿、核心)，訓練部位(胸、背、腿、肩、核心、手臂、全身)以及告訴我主要肌群與協同肌群各自為何，最後我想這個動作的提示與要點，但這部分就以不分段不條列的方式敘述即可` : '';
+    const aiPrompt = data.name ? `${data.name}條列式告訴我：1.確認英文名稱為何或是否正確、2.如果動作類型有推、拉、腿、核心，這個動作會是哪一種、3.如果訓練部位有胸、背、腿、肩、核心、手臂、全身，這個動作會是哪種、4.主要肌群以不加英文單純敘述的方式告訴我是哪裡、5.協同肌群也是、6.最後我想知道這個動作的提示與要點，但這部分就以不分段不條列的方式敘述即可` : '';
 
     const handleCopyPrompt = () => {
         if (!aiPrompt) return;
