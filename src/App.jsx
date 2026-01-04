@@ -15,7 +15,7 @@ import {
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw, GripVertical
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw, GripVertical, Camera, Image as ImageIcon, ChevronUp
 } from 'lucide-react';
 
 // --- 您的專屬 Firebase 設定 ---
@@ -72,6 +72,38 @@ const estimate1RM = (weight, reps) => {
     if (reps === 1) return weight;
     if (reps >= 15) return weight; 
     return Math.round(weight * (1 + reps / 30) * 10) / 10;
+};
+
+// 圖片壓縮工具 (轉 Base64, 限制最大寬度與品質以節省空間)
+const compressImage = (file) => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const MAX_WIDTH = 800; // 限制最大寬度
+                let width = img.width;
+                let height = img.height;
+
+                if (width > MAX_WIDTH) {
+                    height *= MAX_WIDTH / width;
+                    width = MAX_WIDTH;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                // 轉為 JPEG, 品質 0.6
+                resolve(canvas.toDataURL('image/jpeg', 0.6));
+            };
+            img.onerror = (error) => reject(error);
+        };
+        reader.onerror = (error) => reject(error);
+    });
 };
 
 // ----------------------------------------------------
@@ -200,10 +232,17 @@ const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
                 <h3 className="text-2xl font-bold text-indigo-600 border-b pb-2">{data.id ? '編輯動作' : '新增動作'}</h3>
                 
                 <div className="space-y-4 mt-4">
-                    {/* 動作名稱 */}
+                    {/* 動作名稱 - 移除 disabled 限制 */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">動作名稱 <span className="text-red-500">*</span></label>
-                        <input type="text" value={data.name} onChange={(e) => onChange('name', e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:border-indigo-500 font-medium" disabled={!!data.id} placeholder="例如：寬握槓片划船" />
+                        <input 
+                            type="text" 
+                            value={data.name} 
+                            onChange={(e) => onChange('name', e.target.value)} 
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:border-indigo-500 font-medium" 
+                            placeholder="例如：寬握槓片划船" 
+                        />
+                        {data.id && <p className="text-xs text-orange-500 mt-1">注意：修改名稱不會變更歷史紀錄中的舊名稱。</p>}
                     </div>
 
                     {/* 1. 類型 */}
@@ -268,13 +307,33 @@ const MovementEditor = ({ isOpen, onClose, onSave, data, onChange }) => {
     );
 };
 
-const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpdate, handleNoteUpdate, handleRpeUpdate, openResetModal }) => {
+const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpdate, handleNoteUpdate, handleRpeUpdate, openResetModal, handlePhotoUpload }) => {
     const history = weightHistory[move.movementName] || {};
     const lastRecord = history.lastRecord;
     const lastNote = history.lastNote; 
     const suggestion = history.suggestion || (movementDB.find(m => m.name === move.movementName)?.initialWeight || 20); 
     const totalVolume = calculateTotalVolume(move.sets);
     const movementDetail = movementDB.find(m => m.name === move.movementName) || {}; 
+    const fileInputRef = useRef(null);
+    const [isUploading, setIsUploading] = useState(false);
+
+    // 建立 20 到 1 的次數陣列
+    const repsOptions = useMemo(() => Array.from({length: 20}, (_, i) => 20 - i), []);
+
+    const onFileChange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setIsUploading(true);
+        try {
+            const base64Str = await compressImage(file);
+            handlePhotoUpload(index, base64Str);
+        } catch (error) {
+            console.error("Image upload failed", error);
+            alert("圖片處理失敗");
+        } finally {
+            setIsUploading(false);
+        }
+    };
 
     return (
         <div className="bg-white p-4 rounded-xl shadow-lg border-l-4 border-indigo-500 space-y-3">
@@ -297,9 +356,43 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
                 <div className="flex items-center"><TrendingUp className="w-4 h-4 mr-1 text-indigo-600" /><span className="font-semibold">建議:</span><span className="ml-1 text-lg font-extrabold text-indigo-800">{suggestion}kg</span></div>
                 <div className="text-right text-xs">上次<br/><span className="font-medium text-gray-800">{lastRecord ? `${lastRecord.weight}kg x ${lastRecord.reps}` : '無'}</span></div>
             </div>
-            <div className="space-y-2">{move.sets.map((set, si) => (<div key={si} className="flex items-center space-x-2"><span className="w-8 text-xs text-gray-400 font-bold">S{si+1}</span><div className="flex-grow flex space-x-2"><input type="number" value={set.weight} onChange={(e)=>handleSetUpdate(index,si,'weight',e.target.value)} className="w-full p-2 border rounded-lg text-center font-bold" /><select value={set.reps} onChange={(e)=>handleSetUpdate(index,si,'reps',e.target.value)} className="w-full p-2 border rounded-lg text-center font-bold bg-white">{[12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map(num => <option key={num} value={num}>{num}</option>)}</select></div></div>))}</div>
+            <div className="space-y-2">{move.sets.map((set, si) => (<div key={si} className="flex items-center space-x-2"><span className="w-8 text-xs text-gray-400 font-bold">S{si+1}</span><div className="flex-grow flex space-x-2"><input type="number" value={set.weight} onChange={(e)=>handleSetUpdate(index,si,'weight',e.target.value)} className="w-full p-2 border rounded-lg text-center font-bold" /><select value={set.reps} onChange={(e)=>handleSetUpdate(index,si,'reps',e.target.value)} className="w-full p-2 border rounded-lg text-center font-bold bg-white">{repsOptions.map(num => <option key={num} value={num}>{num}</option>)}</select></div></div>))}</div>
             <RpeSelectorAlwaysVisible value={move.rpe || 8} onChange={(v) => handleRpeUpdate(index, v)} />
-            <div className="text-gray-600 mt-2">{lastNote && <div className="bg-yellow-50 p-2 rounded-lg text-xs mb-2 border border-yellow-100">上次: {history.lastNote}</div>}<textarea placeholder="心得..." value={move.note || ''} onChange={(e) => handleNoteUpdate(index, e.target.value)} rows="1" className="w-full p-2 border rounded-lg text-sm" /></div>
+            
+            {/* Note & Photo Section */}
+            <div className="text-gray-600 mt-2 space-y-2">
+                {lastNote && <div className="bg-yellow-50 p-2 rounded-lg text-xs border border-yellow-100">上次: {history.lastNote}</div>}
+                
+                <div className="flex gap-2">
+                    <textarea placeholder="心得..." value={move.note || ''} onChange={(e) => handleNoteUpdate(index, e.target.value)} rows="1" className="flex-grow p-2 border rounded-lg text-sm" />
+                    
+                    {/* Photo Upload Button */}
+                    <div className="flex flex-col items-center justify-center">
+                        <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={onFileChange} />
+                        <button 
+                            onClick={() => fileInputRef.current.click()} 
+                            className={`p-2 rounded-lg border ${move.photo ? 'bg-indigo-100 text-indigo-600 border-indigo-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}
+                            title="上傳照片"
+                        >
+                            {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Photo Preview */}
+                {move.photo && (
+                    <div className="relative mt-2">
+                        <img src={move.photo} alt="Training Log" className="w-full h-32 object-cover rounded-lg border border-gray-200" />
+                        <button 
+                            onClick={() => handlePhotoUpload(index, null)}
+                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 shadow-md opacity-80 hover:opacity-100"
+                        >
+                            <X className="w-3 h-3" />
+                        </button>
+                    </div>
+                )}
+            </div>
+
             <div className="text-right text-xs font-bold text-indigo-400">總量: {totalVolume} kg</div>
         </div>
     );
@@ -906,6 +999,21 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
         setPlanMovements(_planMovements);
     };
 
+    // Mobile Reorder Logic (Move Up/Down)
+    const moveUp = (index) => {
+        if (index === 0) return;
+        const newMovements = [...planMovements];
+        [newMovements[index - 1], newMovements[index]] = [newMovements[index], newMovements[index - 1]];
+        setPlanMovements(newMovements);
+    };
+
+    const moveDown = (index) => {
+        if (index === planMovements.length - 1) return;
+        const newMovements = [...planMovements];
+        [newMovements[index], newMovements[index + 1]] = [newMovements[index + 1], newMovements[index]];
+        setPlanMovements(newMovements);
+    };
+
     useEffect(() => {
         const plan = editingPlanId ? plansDB.find(p => p.id === editingPlanId) : null;
         setPlanName(plan ? plan.name : '');
@@ -984,18 +1092,28 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
                     {planMovements.map((m, i) => (
                         <div 
                             key={i} 
-                            className="flex items-center space-x-3 bg-white p-3 rounded-xl shadow-sm cursor-move"
+                            className="flex items-center space-x-2 bg-white p-3 rounded-xl shadow-sm"
                             draggable
                             onDragStart={(e) => (dragItem.current = i)}
                             onDragEnter={(e) => (dragOverItem.current = i)}
                             onDragEnd={handleSort}
                             onDragOver={(e) => e.preventDefault()}
                         >
-                            <div className="flex-grow font-bold">{m.name}</div>
-                            <input type="number" value={m.sets} onChange={(e)=>handleMovementUpdate(i, 'sets', e.target.value)} className="w-12 p-1 border rounded text-center"/>x<input type="number" value={m.targetReps} onChange={(e)=>handleMovementUpdate(i, 'targetReps', e.target.value)} className="w-12 p-1 border rounded text-center"/><button onClick={()=>setPlanMovements(planMovements.filter((_,idx)=>idx!==i))} className="text-red-500"><Trash2 className="w-5 h-5"/></button>
-                            <div className="text-gray-400 cursor-grab active:cursor-grabbing px-2">
-                                <GripVertical className="w-5 h-5" />
+                            {/* Reorder Controls (Mobile Friendly) */}
+                            <div className="flex flex-col space-y-1">
+                                <button onClick={() => moveUp(i)} disabled={i === 0} className={`p-1 rounded ${i === 0 ? 'text-gray-200' : 'text-indigo-500 bg-indigo-50 hover:bg-indigo-100'}`}>
+                                    <ChevronUp className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => moveDown(i)} disabled={i === planMovements.length - 1} className={`p-1 rounded ${i === planMovements.length - 1 ? 'text-gray-200' : 'text-indigo-500 bg-indigo-50 hover:bg-indigo-100'}`}>
+                                    <ChevronDown className="w-4 h-4" />
+                                </button>
                             </div>
+                            
+                            <div className="flex-grow font-bold ml-1">{m.name}</div>
+                            <input type="number" value={m.sets} onChange={(e)=>handleMovementUpdate(i, 'sets', e.target.value)} className="w-10 p-1 border rounded text-center text-sm"/>
+                            <span className="text-gray-400 text-xs">x</span>
+                            <input type="number" value={m.targetReps} onChange={(e)=>handleMovementUpdate(i, 'targetReps', e.target.value)} className="w-10 p-1 border rounded text-center text-sm"/>
+                            <button onClick={()=>setPlanMovements(planMovements.filter((_,idx)=>idx!==i))} className="text-red-500 ml-1"><Trash2 className="w-5 h-5"/></button>
                         </div>
                     ))}
                 </div>
@@ -1102,11 +1220,29 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
     };
     const handleNoteUpdate = (mi, v) => { const newLog = [...currentLog]; newLog[mi].note = v; setCurrentLog(newLog); };
     const handleRpeUpdate = (mi, v) => { const newLog = [...currentLog]; newLog[mi].rpe = v; setCurrentLog(newLog); };
+    
+    // Handle photo upload update in state
+    const handlePhotoUpload = (mi, base64) => {
+        const newLog = [...currentLog];
+        newLog[mi].photo = base64; // Store base64 string directly
+        setCurrentLog(newLog);
+    };
+
     const handleLogSubmit = async () => {
         const active = currentLog.filter(m => m.sets.some(s => s.weight > 0));
         if (active.length === 0) return alert("請至少記錄一組重量");
         
-        const sub = { date: new Date(selectedDate).getTime(), userId, menuId: selectedDailyPlanId || 'custom', movements: active.map(m => ({ ...m, totalVolume: calculateTotalVolume(m.sets) })) };
+        const sub = { 
+            date: new Date(selectedDate).getTime(), 
+            userId, 
+            menuId: selectedDailyPlanId || 'custom', 
+            movements: active.map(m => ({ 
+                ...m, 
+                totalVolume: calculateTotalVolume(m.sets),
+                // Ensure photo is included if exists
+                photo: m.photo || null 
+            })) 
+        };
         const total = sub.movements.reduce((s, m) => s + m.totalVolume, 0);
         await setDoc(doc(collection(db, `artifacts/${appId}/users/${userId}/LogDB`), `${selectedDate}-${Date.now()}`), { ...sub, overallVolume: total });
         
@@ -1139,7 +1275,18 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
             <div className="space-y-4 pb-20">
                 {currentLog.length === 0 && <div className="text-center text-gray-400 py-10">從選單載入菜單，或點擊下方新增動作</div>}
                 {currentLog.map((move, i) => (
-                    <MovementLogCard key={i} move={move} index={i} weightHistory={weightHistory} movementDB={movementDB} handleSetUpdate={handleSetUpdate} handleNoteUpdate={handleNoteUpdate} handleRpeUpdate={(index, val) => handleRpeUpdate(i, val)} openResetModal={(name) => setResetModalState({ isOpen: true, movementName: name, initialWeight: 20 })} />
+                    <MovementLogCard 
+                        key={i} 
+                        move={move} 
+                        index={i} 
+                        weightHistory={weightHistory} 
+                        movementDB={movementDB} 
+                        handleSetUpdate={handleSetUpdate} 
+                        handleNoteUpdate={handleNoteUpdate} 
+                        handleRpeUpdate={(index, val) => handleRpeUpdate(i, val)} 
+                        handlePhotoUpload={handlePhotoUpload}
+                        openResetModal={(name) => setResetModalState({ isOpen: true, movementName: name, initialWeight: 20 })} 
+                    />
                 ))}
                 <button onClick={() => setAddMoveModalOpen(true)} className="w-full bg-teal-500 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>新增動作 (預設 4組)</button>
                 {currentLog.length > 0 && <button onClick={handleLogSubmit} className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg my-4">完成訓練</button>}
@@ -1376,6 +1523,11 @@ const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB, db, appId, userId })
                                                     <div key={si}>S{si+1}: {s.weight}kg x {s.reps}</div>
                                                 ))}
                                                 {m.note && <div className="col-span-2 text-indigo-600 mt-1">📝 {m.note}</div>}
+                                                {m.photo && (
+                                                    <div className="col-span-2 mt-2">
+                                                        <img src={m.photo} alt="log" className="w-full h-32 object-cover rounded-lg border"/>
+                                                    </div>
+                                                )}
                                             </div>
                                         </details>
                                     ))}
