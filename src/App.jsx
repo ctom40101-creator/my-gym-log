@@ -1158,7 +1158,7 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
     // --- AI 總結與評估提示詞邏輯 ---
     const aiSummaryPrompt = useMemo(() => {
         const moveList = planMovements.map(m => `${m.name} ${m.sets}組${m.targetReps}下`).join('\n');
-        return `此菜單內容為\n${moveList}\n我要練的部位是「${aiEvalBodyPart || '______'}」，請幫我評估如果：\n1.是否整體目標肌群過於重複，有建議少掉的動作嗎\n2.目前動作順序需要調整嗎\n3.有沒有不足建議補上的部位\n4.總訓練量之組數與下數需要調整嗎，如果有需要分別給我我的版本與你建議的版本的建議`;
+        return `此菜單內容為\n${moveList}\n我要練的部位是「${aiEvalBodyPart || '______'}」，請幫我評估如果：\n1.是否整體目標肌群過於重複，有建議少掉的動作嗎\n2.目前動作順序需要調整嗎\n3.有沒有不足建議補上的部位\n4.總訓練量之組數與下數需要調整嗎，如果有需要分別給我我的版本與你建議的版本的建議\n5.如果不照你的建議，依然使用我的菜單與對應組數與下數，滿分100分，不及格60，可直接操課使用為80分的話，我的你認為是幾分`;
     }, [planMovements, aiEvalBodyPart]);
 
     const handleCopyAiPrompt = () => {
