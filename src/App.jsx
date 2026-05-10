@@ -19,6 +19,10 @@ import {
   Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw, GripVertical, Camera, Image as ImageIcon, ChevronUp, Grid
 } from 'lucide-react';
 import LoadingSpinner from './components/LoadingSpinner';
+import EmptyState from './components/EmptyState';
+
+
+
 
 // --- 預設動作資料 ---
 const DEFAULT_MOVEMENTS = [
@@ -400,7 +404,7 @@ const AdminScreen = ({ db, APP_ID }) => {
 
             {isLoading ? <div className="text-center py-10"><LoadingSpinner size="lg" className="mx-auto text-indigo-500" /></div> : (
                 <div className="space-y-3">
-                    {users.length === 0 ? <p className="text-center text-gray-500">沒有找到用戶資料 (需登入過才會建立)</p> : users.map(u => (
+                    {users.length === 0 ? <EmptyState>沒有找到用戶資料 (需登入過才會建立)</EmptyState> : users.map(u => (
                         <div key={u.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col gap-2">
                             <div className="flex justify-between items-start">
                                 <div>
