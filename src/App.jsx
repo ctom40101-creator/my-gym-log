@@ -1,43 +1,24 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  signInAnonymously, 
-  signInWithCustomToken, 
-  onAuthStateChanged, 
-  EmailAuthProvider, 
-  linkWithCredential, 
-  signInWithEmailAndPassword, 
-  signOut, 
-  sendPasswordResetEmail,
-  deleteUser 
+import { auth, db } from './firebase';
+import { 
+  getAuth,
+  signInAnonymously, 
+  signInWithCustomToken, 
+  onAuthStateChanged, 
+  EmailAuthProvider, 
+  linkWithCredential, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  sendPasswordResetEmail,
+  deleteUser 
 } from 'firebase/auth';
-import { getFirestore, doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
+import { doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
+import { APP_ID, INITIAL_AUTH_TOKEN, ADMIN_EMAIL } from './constants';
 import {
-  Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
-  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw, GripVertical, Camera, Image as ImageIcon, ChevronUp, Grid
+  Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
+  Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw, GripVertical, Camera, Image as ImageIcon, ChevronUp, Grid
 } from 'lucide-react';
 
-// --- 您的專屬 Firebase 設定 ---
-const firebaseConfig = {
-  apiKey: "AIzaSyBsHIPtSV_wRioxBKYOqzgLGwZHWWfZcNc",
-  authDomain: "mygymlog-604bc.firebaseapp.com",
-  projectId: "mygymlog-604bc",
-  storageBucket: "mygymlog-604bc.firebasestorage.app",
-  messagingSenderId: "980701704046",
-  appId: "1:980701704046:web:22a2b1a727fa511107db7f",
-  measurementId: "G-MPXB8R0L6H"
-};
-
-// --- 初始化 Firebase ---
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
-const appId = 'mygymlog-604bc'; 
-const initialAuthToken = null; 
-
-// --- 管理員設定 ---
-const ADMIN_EMAIL = 'ctom40101@gmail.com';
 
 // --- 預設動作資料 ---
 const DEFAULT_MOVEMENTS = [
@@ -366,7 +347,7 @@ const MovementLogCard = ({ move, index, weightHistory, movementDB, handleSetUpda
 // ----------------------------------------------------
 // AdminScreen
 // ----------------------------------------------------
-const AdminScreen = ({ db, appId }) => {
+const AdminScreen = ({ db, APP_ID }) => {
     const [users, setUsers] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -374,7 +355,7 @@ const AdminScreen = ({ db, appId }) => {
         setIsLoading(true);
         try {
             // Fetch all documents from the PUBLIC UserIndex collection
-            const q = query(collection(db, `artifacts/${appId}/public/data/UserIndex`));
+            const q = query(collection(db, `artifacts/${APP_ID}/public/data/UserIndex`));
             const snapshot = await getDocs(q);
             const userList = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             setUsers(userList);
@@ -384,7 +365,7 @@ const AdminScreen = ({ db, appId }) => {
         } finally {
             setIsLoading(false);
         }
-    }, [db, appId]);
+    }, [db, APP_ID]);
 
     useEffect(() => {
         fetchUsers();
@@ -396,7 +377,7 @@ const AdminScreen = ({ db, appId }) => {
         try {
             const collectionsToDelete = ['LogDB', 'BodyMetricsDB', 'MovementDB', 'PlansDB'];
             for (const colName of collectionsToDelete) {
-                const q = query(collection(db, `artifacts/${appId}/users/${targetUserId}/${colName}`));
+                const q = query(collection(db, `artifacts/${APP_ID}/users/${targetUserId}/${colName}`));
                 const snapshot = await getDocs(q);
                 const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
                 await Promise.all(deletePromises);
@@ -447,7 +428,7 @@ const AdminScreen = ({ db, appId }) => {
 // ----------------------------------------------------
 // ProfileScreen
 // ----------------------------------------------------
-const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
+const ProfileScreen = ({ bodyMetricsDB, userId, db, APP_ID, logDB, auth }) => {
     const [weight, setWeight] = useState('');
     const [bodyFat, setBodyFat] = useState('');
     const today = new Date().toISOString().substring(0, 10);
@@ -549,14 +530,14 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         try {
             const collectionsToDelete = ['LogDB', 'BodyMetricsDB', 'MovementDB', 'PlansDB'];
             for (const colName of collectionsToDelete) {
-                const q = query(collection(db, `artifacts/${appId}/users/${userId}/${colName}`));
+                const q = query(collection(db, `artifacts/${APP_ID}/users/${userId}/${colName}`));
                 const snapshot = await getDocs(q);
                 const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
                 await Promise.all(deletePromises);
             }
-            await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/Settings`, 'profile'));
+            await deleteDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/Settings`, 'profile'));
             // Remove from UserIndex (Public)
-            await deleteDoc(doc(db, `artifacts/${appId}/public/data/UserIndex`, userId));
+            await deleteDoc(doc(db, `artifacts/${APP_ID}/public/data/UserIndex`, userId));
 
             await deleteUser(user);
             alert("帳號與資料已成功刪除。");
@@ -571,7 +552,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     useEffect(() => {
         if (!userId || !db) return;
         const fetchSettings = async () => {
-            const docRef = doc(db, `artifacts/${appId}/users/${userId}/Settings`, 'profile');
+            const docRef = doc(db, `artifacts/${APP_ID}/users/${userId}/Settings`, 'profile');
             const snap = await getDoc(docRef);
             if (snap.exists()) {
                 setStartDate(snap.data().startDate || '');
@@ -580,7 +561,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
             }
         };
         fetchSettings();
-    }, [userId, db, appId]);
+    }, [userId, db, APP_ID]);
 
     const totalTrainingDays = useMemo(() => {
         const uniqueDates = new Set(logDB.map(log => new Date(log.date).toDateString()));
@@ -591,14 +572,14 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         if (!userId || !db) return;
         try {
              // 1. Update private settings
-             await setDoc(doc(db, `artifacts/${appId}/users/${userId}/Settings`, 'profile'), {
+             await setDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/Settings`, 'profile'), {
                 startDate,
                 baseTrainingDays: Number(baseTrainingDays),
                 nickname
             });
             
             // 2. Update Public User Index for Admin
-            await setDoc(doc(db, `artifacts/${appId}/public/data/UserIndex`, userId), {
+            await setDoc(doc(db, `artifacts/${APP_ID}/public/data/UserIndex`, userId), {
                 email: user.email || 'anonymous',
                 nickname: nickname,
                 lastLogin: Date.now(),
@@ -616,7 +597,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
         if (!userId || !db) return;
         try {
             const docId = `metrics-${date}`; 
-            const metricsRef = doc(collection(db, `artifacts/${appId}/users/${userId}/BodyMetricsDB`), docId);
+            const metricsRef = doc(collection(db, `artifacts/${APP_ID}/users/${userId}/BodyMetricsDB`), docId);
             await setDoc(metricsRef, {
                 date: date,
                 weight: parseFloat(weight) || 0,
@@ -634,7 +615,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     const handleDelete = async (dateKey) => {
         if (!confirm('確定要刪除這筆紀錄嗎？')) return;
         try {
-            await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/BodyMetricsDB`, `metrics-${dateKey}`));
+            await deleteDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/BodyMetricsDB`, `metrics-${dateKey}`));
         } catch (e) {
             console.error("Delete error:", e);
         }
@@ -791,7 +772,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, appId, logDB, auth }) => {
     );
 };
 
-const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId, logDB, plansDB }) => {
+const LibraryScreen = ({ weightHistory, movementDB, db, APP_ID, userId, logDB, plansDB }) => {
     const [filter, setFilter] = useState('');
     const [isEditing, setIsEditing] = useState(false);
     const [isBatchMode, setIsBatchMode] = useState(false); 
@@ -804,11 +785,11 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId, logDB, pl
     useEffect(() => {
         if (!userId) return;
         const fetchNickname = async () => {
-            const snap = await getDoc(doc(db, `artifacts/${appId}/users/${userId}/Settings`, 'profile'));
+            const snap = await getDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/Settings`, 'profile'));
             if (snap.exists()) setNickname(snap.data().nickname || '');
         };
         fetchNickname();
-    }, [userId, db, appId]);
+    }, [userId, db, APP_ID]);
     const [importWithNickname, setImportWithNickname] = useState(false);
     const categories = ['胸', '背', '腿', '肩', '手臂', '核心', '全身'];
     const filteredMovements = movementDB.filter(m => (!filter || m.bodyPart === filter || m.name.includes(filter)));
@@ -826,7 +807,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId, logDB, pl
         if (!confirm(`確定要刪除選取的 ${selectedItems.size} 個動作嗎？`)) return;
         const batch = writeBatch(db);
         selectedItems.forEach(id => {
-            const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, id); 
+            const ref = doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, id); 
             batch.delete(ref);
         });
         await batch.commit();
@@ -838,7 +819,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId, logDB, pl
         if (!confirm(`確定要復原 (刪除) 剛剛匯入的 ${lastImportedIds.length} 個動作嗎？`)) return;
         const batch = writeBatch(db);
         lastImportedIds.forEach(id => {
-            const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, id); 
+            const ref = doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, id); 
             batch.delete(ref);
         });
         try { await batch.commit(); setLastImportedIds([]); alert("已復原上一次匯入！"); } catch (error) { console.error("Undo failed:", error); alert("復原失敗，請稍後再試。"); }
@@ -909,7 +890,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId, logDB, pl
                     name = name.trim();
                     let finalName = name;
                     if (importWithNickname && sourceNickname && sourceNickname.trim()) { finalName = `(來自${sourceNickname.trim()})${name}`; }
-                    const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, finalName); 
+                    const ref = doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, finalName); 
                     batch.set(ref, {
                         name: finalName,
                         type: type,
@@ -949,8 +930,8 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId, logDB, pl
                 const batch = writeBatch(db);
 
                 // 1. Create new movement doc & Delete old
-                const newRef = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, newName);
-                const oldRef = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, oldName);
+                const newRef = doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, newName);
+                const oldRef = doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, oldName);
                 
                 batch.set(newRef, { ...editingMove, name: newName, initialWeight: Number(editingMove.initialWeight||0) });
                 batch.delete(oldRef);
@@ -972,12 +953,12 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId, logDB, pl
 
                         // Check reset logic too
                         if (log.isReset && log.movementName === oldName) {
-                             const logRef = doc(db, `artifacts/${appId}/users/${userId}/LogDB`, log.id);
+                             const logRef = doc(db, `artifacts/${APP_ID}/users/${userId}/LogDB`, log.id);
                              batch.update(logRef, { movementName: newName });
                         }
 
                         if (hasChange) {
-                            const logRef = doc(db, `artifacts/${appId}/users/${userId}/LogDB`, log.id);
+                            const logRef = doc(db, `artifacts/${APP_ID}/users/${userId}/LogDB`, log.id);
                             batch.update(logRef, { movements: updatedMovements });
                         }
                     }
@@ -996,7 +977,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId, logDB, pl
                         });
 
                         if (hasChange) {
-                            const planRef = doc(db, `artifacts/${appId}/users/${userId}/PlansDB`, plan.id);
+                            const planRef = doc(db, `artifacts/${APP_ID}/users/${userId}/PlansDB`, plan.id);
                             batch.update(planRef, { movements: updatedMovements });
                         }
                     }
@@ -1019,7 +1000,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId, logDB, pl
             // Normal Save (Add new or Update existing without rename)
             const docId = oldName || newName; 
             try { 
-                await setDoc(doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, docId), { ...editingMove, initialWeight: Number(editingMove.initialWeight||0) }); 
+                await setDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, docId), { ...editingMove, initialWeight: Number(editingMove.initialWeight||0) }); 
                 setIsEditing(false); 
                 setEditingMove(null); 
                 if (!oldName) setFilter(''); 
@@ -1028,7 +1009,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId, logDB, pl
             }
         }
     };
-    const handleDeleteMovement = async (id) => { if (confirm('刪除?')) await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, id)); };
+    const handleDeleteMovement = async (id) => { if (confirm('刪除?')) await deleteDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, id)); };
 
     return (
         <>
@@ -1050,7 +1031,7 @@ const LibraryScreen = ({ weightHistory, movementDB, db, appId, userId, logDB, pl
     );
 };
 
-const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, movementDB, db, userId, appId, setScreen, currentLog, setCurrentLog }) => {
+const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, movementDB, db, userId, APP_ID, setScreen, currentLog, setCurrentLog }) => {
     const [isCreating, setIsCreating] = useState(false);
     const [editingPlanId, setEditingPlanId] = useState(null);
     const [planName, setPlanName] = useState('');
@@ -1116,10 +1097,10 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
     const handleSave = async () => {
         if (!db || !userId || !planName) return;
         const docId = editingPlanId || `plan-${Date.now()}`;
-        await setDoc(doc(db, `artifacts/${appId}/users/${userId}/PlansDB`, docId), { name: planName, movements: planMovements, userId }); // 修正為 users 路徑
+        await setDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/PlansDB`, docId), { name: planName, movements: planMovements, userId }); // 修正為 users 路徑
         setIsCreating(false); setEditingPlanId(null);
     };
-    const handleDelete = async (id) => { if(confirm('刪除?')) await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/PlansDB`, id)); }; // 修正為 users 路徑
+    const handleDelete = async (id) => { if(confirm('刪除?')) await deleteDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/PlansDB`, id)); }; // 修正為 users 路徑
 
     // Batch Delete for Menu
     const toggleSelection = (id) => {
@@ -1133,7 +1114,7 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
         if (!confirm(`確定要刪除選取的 ${selectedItems.size} 個菜單嗎？`)) return;
         const batch = writeBatch(db);
         selectedItems.forEach(id => {
-            const ref = doc(db, `artifacts/${appId}/users/${userId}/PlansDB`, id); // 修正為 users 路徑
+            const ref = doc(db, `artifacts/${APP_ID}/users/${userId}/PlansDB`, id); // 修正為 users 路徑
             batch.delete(ref);
         });
         await batch.commit();
@@ -1247,7 +1228,7 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
     );
 };
 
-const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movementDB, weightHistory, db, userId, appId, setScreen, currentLog, setCurrentLog }) => {
+const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movementDB, weightHistory, db, userId, APP_ID, setScreen, currentLog, setCurrentLog }) => {
     const today = new Date().toISOString().substring(0, 10);
     const [selectedDate, setSelectedDate] = useState(today);
     // currentLog is now a prop from App
@@ -1342,7 +1323,7 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
             })) 
         };
         const total = sub.movements.reduce((s, m) => s + m.totalVolume, 0);
-        await setDoc(doc(collection(db, `artifacts/${appId}/users/${userId}/LogDB`), `${selectedDate}-${Date.now()}`), { ...sub, overallVolume: total });
+        await setDoc(doc(collection(db, `artifacts/${APP_ID}/users/${userId}/LogDB`), `${selectedDate}-${Date.now()}`), { ...sub, overallVolume: total });
         
         setCurrentLog([]); // Clear draft after submit
         setSessionPhoto(null); // Clear photo
@@ -1352,14 +1333,14 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
     };
     
     const executeResetWeight = async (name, weight) => {
-        await setDoc(doc(collection(db, `artifacts/${appId}/users/${userId}/LogDB`), `reset-${Date.now()}`), { date: Date.now(), userId, movementName: name, isReset: true, resetWeight: weight });
+        await setDoc(doc(collection(db, `artifacts/${APP_ID}/users/${userId}/LogDB`), `reset-${Date.now()}`), { date: Date.now(), userId, movementName: name, isReset: true, resetWeight: weight });
         setResetModalState({ isOpen: false });
     };
 
     return (
         <>
             <WeightResetModal state={resetModalState} onClose={() => setResetModalState({ isOpen: false })} onConfirm={executeResetWeight} />
-            <BodyMetricsModal isOpen={isBodyMetricsModalOpen} onClose={() => setIsBodyMetricsModalOpen(false)} onSave={async (d, w, f) => { await setDoc(doc(collection(db, `artifacts/${appId}/users/${userId}/BodyMetricsDB`), `metrics-${d}`), { date: d, weight: w, bodyFat: f }); }} />
+            <BodyMetricsModal isOpen={isBodyMetricsModalOpen} onClose={() => setIsBodyMetricsModalOpen(false)} onSave={async (d, w, f) => { await setDoc(doc(collection(db, `artifacts/${APP_ID}/users/${userId}/BodyMetricsDB`), `metrics-${d}`), { date: d, weight: w, bodyFat: f }); }} />
             <AddMovementModal isOpen={addMoveModalOpen} onClose={() => setAddMoveModalOpen(false)} movementDB={movementDB} onAdd={(name) => { setCurrentLog([...currentLog, { movementName: name, targetSets: 4, note: '', sets: Array(4).fill({ reps: 12, weight: 0 }), rpe: 8 }]); setAddMoveModalOpen(false); }} />
             
             <div className="flex justify-between items-center bg-white p-3 rounded-xl shadow-md mb-4">
@@ -1432,7 +1413,7 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
 // ----------------------------------------------------
 // AnalysisScreen - v3.8 修正空白與重置邏輯
 // ----------------------------------------------------
-const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB, db, appId, userId }) => {
+const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB, db, APP_ID, userId }) => {
     const [view, setView] = useState('Overview'); // Overview, Strength, Body, History
     const [selectedMovement, setSelectedMovement] = useState('');
 
@@ -1490,7 +1471,7 @@ const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB, db, appId, userId })
     const handleDeleteLog = async (logId) => {
         if(!confirm("確定要刪除這筆紀錄嗎？無法復原。")) return;
         try {
-            await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/LogDB`, logId));
+            await deleteDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/LogDB`, logId));
             alert("刪除成功");
         } catch(e) {
             console.error(e);
@@ -1504,7 +1485,7 @@ const AnalysisScreen = ({ logDB, bodyMetricsDB, movementDB, db, appId, userId })
         
         const batch = writeBatch(db);
         logDB.forEach(log => {
-             const ref = doc(db, `artifacts/${appId}/users/${userId}/LogDB`, log.id);
+             const ref = doc(db, `artifacts/${APP_ID}/users/${userId}/LogDB`, log.id);
              batch.delete(ref);
         });
         
@@ -1710,7 +1691,7 @@ const App = () => {
     useEffect(() => {
         if (!auth) return;
         const init = async () => {
-            if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
+            if (INITIAL_AUTH_TOKEN) await signInWithCustomToken(auth, INITIAL_AUTH_TOKEN);
             else {
                 // 等待一下確認沒有currentUser才匿名，避免覆蓋
                 const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -1821,26 +1802,26 @@ const App = () => {
     useEffect(() => {
         if (!isAuthReady || !userId || !db) return;
         // 修正路徑：讀取 users/{userId}/MovementDB (私有)
-        const unsub1 = onSnapshot(query(collection(db, `artifacts/${appId}/users/${userId}/MovementDB`)), (s) => setMovementDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsub1 = onSnapshot(query(collection(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`)), (s) => setMovementDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
         // 修正路徑：讀取 users/{userId}/PlansDB (私有)
-        const unsub2 = onSnapshot(query(collection(db, `artifacts/${appId}/users/${userId}/PlansDB`)), (s) => setPlansDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsub2 = onSnapshot(query(collection(db, `artifacts/${APP_ID}/users/${userId}/PlansDB`)), (s) => setPlansDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
         
-        const unsub3 = onSnapshot(query(collection(db, `artifacts/${appId}/users/${userId}/LogDB`), orderBy('date', 'desc')), (s) => setLogDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-        const unsub4 = onSnapshot(query(collection(db, `artifacts/${appId}/users/${userId}/BodyMetricsDB`)), (s) => setBodyMetricsDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsub3 = onSnapshot(query(collection(db, `artifacts/${APP_ID}/users/${userId}/LogDB`), orderBy('date', 'desc')), (s) => setLogDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsub4 = onSnapshot(query(collection(db, `artifacts/${APP_ID}/users/${userId}/BodyMetricsDB`)), (s) => setBodyMetricsDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
         return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
     }, [isAuthReady, userId]);
 
     if (!isAuthReady) return <div className="p-10 text-center">Loading...</div>;
 
     const renderScreen = () => {
-        if (screen === 'Admin') return <ScreenContainer title="🛡️ 管理後台"><AdminScreen db={db} appId={appId} /></ScreenContainer>;
+        if (screen === 'Admin') return <ScreenContainer title="🛡️ 管理後台"><AdminScreen db={db} APP_ID={APP_ID} /></ScreenContainer>;
 
         switch (screen) {
-            case 'Library': return <ScreenContainer title="🏋️ 動作庫"><LibraryScreen weightHistory={weightHistory} movementDB={movementDB} db={db} appId={appId} userId={userId} logDB={logDB} plansDB={plansDB} /></ScreenContainer>;
-            case 'Menu': return <ScreenContainer title="📋 菜單"><MenuScreen setSelectedDailyPlanId={setSelectedDailyPlanId} selectedDailyPlanId={selectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} db={db} userId={userId} appId={appId} setScreen={setScreen} currentLog={currentLog} setCurrentLog={setCurrentLog} /></ScreenContainer>;
-            case 'Analysis': return <ScreenContainer title="📈 分析"><AnalysisScreen logDB={logDB} bodyMetricsDB={bodyMetricsDB} movementDB={movementDB} db={db} appId={appId} userId={userId} /></ScreenContainer>;
-            case 'Profile': return <ScreenContainer title="👤 個人"><ProfileScreen bodyMetricsDB={bodyMetricsDB} userId={userId} db={db} appId={appId} logDB={logDB} auth={auth} /></ScreenContainer>;
-            default: return <ScreenContainer title="✍️ 紀錄"><LogScreen selectedDailyPlanId={selectedDailyPlanId} setSelectedDailyPlanId={setSelectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} weightHistory={weightHistory} db={db} userId={userId} appId={appId} setScreen={setScreen} currentLog={currentLog} setCurrentLog={setCurrentLog} /></ScreenContainer>;
+            case 'Library': return <ScreenContainer title="🏋️ 動作庫"><LibraryScreen weightHistory={weightHistory} movementDB={movementDB} db={db} APP_ID={APP_ID} userId={userId} logDB={logDB} plansDB={plansDB} /></ScreenContainer>;
+            case 'Menu': return <ScreenContainer title="📋 菜單"><MenuScreen setSelectedDailyPlanId={setSelectedDailyPlanId} selectedDailyPlanId={selectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} db={db} userId={userId} APP_ID={APP_ID} setScreen={setScreen} currentLog={currentLog} setCurrentLog={setCurrentLog} /></ScreenContainer>;
+            case 'Analysis': return <ScreenContainer title="📈 分析"><AnalysisScreen logDB={logDB} bodyMetricsDB={bodyMetricsDB} movementDB={movementDB} db={db} APP_ID={APP_ID} userId={userId} /></ScreenContainer>;
+            case 'Profile': return <ScreenContainer title="👤 個人"><ProfileScreen bodyMetricsDB={bodyMetricsDB} userId={userId} db={db} APP_ID={APP_ID} logDB={logDB} auth={auth} /></ScreenContainer>;
+            default: return <ScreenContainer title="✍️ 紀錄"><LogScreen selectedDailyPlanId={selectedDailyPlanId} setSelectedDailyPlanId={setSelectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} weightHistory={weightHistory} db={db} userId={userId} APP_ID={APP_ID} setScreen={setScreen} currentLog={currentLog} setCurrentLog={setCurrentLog} /></ScreenContainer>;
         }
     };
 
@@ -1891,15 +1872,15 @@ const NavMenu = ({ screen, setScreen, isAdmin }) => (
 );
 
 // 新增：初始化預設動作 (針對新用戶)
-const setupInitialData = async (db, appId, userId) => {
+const setupInitialData = async (db, APP_ID, userId) => {
     // 檢查用戶的動作庫是否為空
-    const q = query(collection(db, `artifacts/${appId}/users/${userId}/MovementDB`), limit(1));
+    const q = query(collection(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`), limit(1));
     const snapshot = await getDocs(q);
     if (snapshot.empty) {
         // 如果是空的，執行批次寫入
         const batch = writeBatch(db);
         DEFAULT_MOVEMENTS.forEach(move => {
-            const ref = doc(db, `artifacts/${appId}/users/${userId}/MovementDB`, move.name);
+            const ref = doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, move.name);
             batch.set(ref, move);
         });
         await batch.commit();
@@ -1914,7 +1895,7 @@ const setupInitialData = async (db, appId, userId) => {
              // 嘗試讀取舊有的暱稱設定，確保寫入公開名冊時有名字
              let currentNickname = '';
              try {
-                const profileSnap = await getDoc(doc(db, `artifacts/${appId}/users/${userId}/Settings`, 'profile'));
+                const profileSnap = await getDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/Settings`, 'profile'));
                 if (profileSnap.exists()) {
                     currentNickname = profileSnap.data().nickname || '';
                 }
@@ -1922,7 +1903,7 @@ const setupInitialData = async (db, appId, userId) => {
                  // Ignore if no profile
              }
 
-             const userIndexRef = doc(db, `artifacts/${appId}/public/data/UserIndex`, userId);
+             const userIndexRef = doc(db, `artifacts/${APP_ID}/public/data/UserIndex`, userId);
              await setDoc(userIndexRef, {
                 email: userAuth.email || 'anonymous',
                 uid: userId,
@@ -1934,6 +1915,6 @@ const setupInitialData = async (db, appId, userId) => {
     }
 };
 
-if (auth) onAuthStateChanged(auth, (u) => { if(u) setupInitialData(db, appId, u.uid); });
+if (auth) onAuthStateChanged(auth, (u) => { if(u) setupInitialData(db, APP_ID, u.uid); });
 
 export default App;
