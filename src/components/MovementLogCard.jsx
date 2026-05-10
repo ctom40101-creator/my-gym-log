@@ -5,6 +5,7 @@
 import React, { useMemo } from 'react';
 import { ListChecks, PlayCircle, RotateCcw, TrendingUp } from 'lucide-react';
 import { calculateTotalVolume } from '../utils/calculations';
+import RpeSelectorAlwaysVisible from './RpeSelectorAlwaysVisible';
 
 function MovementLogCard({
   move,
@@ -15,7 +16,7 @@ function MovementLogCard({
   handleNoteUpdate,
   handleRpeUpdate,
   openResetModal,
-  RpeSelectorAlwaysVisible,
+
 }) {
   const history = weightHistory[move.movementName] || {};
   const lastRecord = history.lastRecord;
