@@ -30,6 +30,11 @@ import {
 } from './services/databaseService';
 import OverviewScreen from './screens/OverviewScreen';
 import StrengthScreen from './screens/StrengthScreen';
+import { calculateTotalVolume, estimate1RM } from './utils/calculations';
+
+
+
+
 
 
 // --- 預設動作資料 ---
@@ -56,16 +61,7 @@ const WEIGHT_DECREASE_MULTIPLIER = 0.975; 
 // 核心工具函式
 // ----------------------------------------------------
 
-const calculateTotalVolume = (log) => {
-    return log.reduce((total, set) => total + (set.reps * set.weight), 0);
-};
 
-const estimate1RM = (weight, reps) => {
-    if (weight === 0) return 0;
-    if (reps === 1) return weight;
-    if (reps >= 15) return weight; 
-    return Math.round(weight * (1 + reps / 30) * 10) / 10;
-};
 
 // 圖片壓縮工具 (轉 Base64, 限制最大寬度與品質以節省空間)
 const compressImage = (file) => {
