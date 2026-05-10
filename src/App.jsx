@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import LoadingSpinner from './components/LoadingSpinner';
 import EmptyState from './components/EmptyState';
-import { logoutUser } from './services/authService';
+import { logoutUser, resetPassword } from './services/authService';
 
 
 
@@ -512,7 +512,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, APP_ID, logDB, auth }) => {
         if (!email) return alert("請先輸入 Email");
         setIsLoading(true);
         try {
-            await sendPasswordResetEmail(auth, email);
+            await resetPassword(email);
             alert(`重設信已寄至 ${email}，請查收。`);
         } catch (error) {
             handleError(error, '重設密碼');
