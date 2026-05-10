@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import LoadingSpinner from './components/LoadingSpinner';
 import EmptyState from './components/EmptyState';
-
+import { logoutUser } from './services/authService';
 
 
 
@@ -523,7 +523,7 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, APP_ID, logDB, auth }) => {
 
     const handleLogout = async () => {
         if (confirm("確定要登出嗎？")) {
-            await signOut(auth);
+            await logoutUser();
             await signInAnonymously(auth);
         }
     };
