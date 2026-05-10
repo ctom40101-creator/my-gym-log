@@ -18,7 +18,7 @@ import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
   Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw, GripVertical, Camera, Image as ImageIcon, ChevronUp, Grid
 } from 'lucide-react';
-
+import LoadingSpinner from './components/LoadingSpinner';
 
 // --- 預設動作資料 ---
 const DEFAULT_MOVEMENTS = [
@@ -398,7 +398,7 @@ const AdminScreen = ({ db, APP_ID }) => {
                 <p className="text-xs text-red-600 mt-1">此區域僅供管理員使用。您可以清空用戶的資料庫紀錄。</p>
             </div>
 
-            {isLoading ? <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-500"/></div> : (
+            {isLoading ? <div className="text-center py-10"><LoadingSpinner size="lg" className="mx-auto text-indigo-500" /></div> : (
                 <div className="space-y-3">
                     {users.length === 0 ? <p className="text-center text-gray-500">沒有找到用戶資料 (需登入過才會建立)</p> : users.map(u => (
                         <div key={u.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col gap-2">
