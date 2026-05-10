@@ -22,8 +22,12 @@ import LoadingSpinner from './components/LoadingSpinner';
 import EmptyState from './components/EmptyState';
 import { logoutUser, resetPassword } from './services/authService';
 import BodyMetricsModal from './components/BodyMetricsModal';
-import { getMovementDBPath, getPlansDBPath, getLogDBPath } from './services/databaseService';
-
+import { 
+  getMovementDBPath, 
+  getPlansDBPath, 
+  getLogDBPath,
+  getBodyMetricsDBPath
+} from './services/databaseService';
 
 
 
@@ -1790,8 +1794,7 @@ const App = () => {
         const unsub2 = onSnapshot(query(collection(db, getPlansDBPath(APP_ID, userId))), (s) => setPlansDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
         
         const unsub3 = onSnapshot(query(collection(db, getLogDBPath(APP_ID, userId)), orderBy('date', 'desc')), (s) => setLogDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-        const unsub4 = onSnapshot(query(collection(db, `artifacts/${APP_ID}/users/${userId}/BodyMetricsDB`)), (s) => setBodyMetricsDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-        return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+        const unsub4 = onSnapshot(query(collection(db, getBodyMetricsDBPath(APP_ID, userId))), (s) => setBodyMetricsDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));        return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
     }, [isAuthReady, userId]);
 
     if (!isAuthReady) return <div className="p-10 text-center">Loading...</div>;
