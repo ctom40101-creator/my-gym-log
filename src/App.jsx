@@ -21,7 +21,7 @@ import {
 import LoadingSpinner from './components/LoadingSpinner';
 import EmptyState from './components/EmptyState';
 import { logoutUser, resetPassword } from './services/authService';
-
+import BodyMetricsModal from './components/BodyMetricsModal';
 
 
 // --- 預設動作資料 ---
@@ -110,32 +110,7 @@ const ModalContainer = ({ isOpen, onClose, children }) => {
     );
 };
 
-// 1. 身體數據模態框
-const BodyMetricsModal = ({ isOpen, onClose, onSave }) => {
-    const [weight, setWeight] = useState('');
-    const [bodyFat, setBodyFat] = useState('');
-    const [date, setDate] = useState(new Date().toISOString().substring(0, 10));
 
-    useEffect(() => { if (isOpen) { setWeight(''); setBodyFat(''); } }, [isOpen]);
-
-    const handleSave = () => { onSave(date, weight, bodyFat); onClose(); };
-
-    return (
-        <ModalContainer isOpen={isOpen} onClose={onClose}>
-            <div className="bg-white p-6">
-                <h3 className="text-xl font-bold text-indigo-600 flex items-center border-b pb-2"><Activity className="w-6 h-6 mr-2" />快速紀錄 (Log頁面)</h3>
-                <div className="space-y-4 mt-4">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">日期</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full p-2 border rounded-lg" /></div>
-                    <div className="flex gap-4">
-                        <div className="w-1/2"><label className="block text-sm font-medium text-gray-700 mb-1">體重 (KG)</label><input type="number" value={weight} onChange={(e) => setWeight(e.target.value)} className="w-full p-2 border rounded-lg" step="0.1" /></div>
-                        <div className="w-1/2"><label className="block text-sm font-medium text-gray-700 mb-1">體脂 (%)</label><input type="number" value={bodyFat} onChange={(e) => setBodyFat(e.target.value)} className="w-full p-2 border rounded-lg" step="0.1" /></div>
-                    </div>
-                    <div className="flex justify-end space-x-3 pt-4"><button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-lg">取消</button><button onClick={handleSave} className="px-4 py-2 bg-indigo-600 text-white rounded-lg">儲存</button></div>
-                </div>
-            </div>
-        </ModalContainer>
-    );
-};
 
 // 2. 重置重量模態框
 const WeightResetModal = ({ state, onClose, onConfirm }) => {
@@ -1344,7 +1319,7 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
     return (
         <>
             <WeightResetModal state={resetModalState} onClose={() => setResetModalState({ isOpen: false })} onConfirm={executeResetWeight} />
-            <BodyMetricsModal isOpen={isBodyMetricsModalOpen} onClose={() => setIsBodyMetricsModalOpen(false)} onSave={async (d, w, f) => { await setDoc(doc(collection(db, `artifacts/${APP_ID}/users/${userId}/BodyMetricsDB`), `metrics-${d}`), { date: d, weight: w, bodyFat: f }); }} />
+            <BodyMetricsModal isOpen={isBodyMetricsModalOpen} onClose={() => setIsBodyMetricsModalOpen(false)} onSave={async (d, w, f) => { await setDoc(doc(collection(db, `artifacts/${APP_ID}/users/${userId}/BodyMetricsDB`), `metrics-${d}`), { date: d, weight: w, bodyFat: f }); }}ModalContainer={ModalContainer} />
             <AddMovementModal isOpen={addMoveModalOpen} onClose={() => setAddMoveModalOpen(false)} movementDB={movementDB} onAdd={(name) => { setCurrentLog([...currentLog, { movementName: name, targetSets: 4, note: '', sets: Array(4).fill({ reps: 12, weight: 0 }), rpe: 8 }]); setAddMoveModalOpen(false); }} />
             
             <div className="flex justify-between items-center bg-white p-3 rounded-xl shadow-md mb-4">
