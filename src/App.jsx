@@ -22,6 +22,10 @@ import LoadingSpinner from './components/LoadingSpinner';
 import EmptyState from './components/EmptyState';
 import { logoutUser, resetPassword } from './services/authService';
 import BodyMetricsModal from './components/BodyMetricsModal';
+import { getMovementDBPath } from './services/databaseService';
+
+
+
 
 
 // --- 預設動作資料 ---
@@ -1781,7 +1785,7 @@ const App = () => {
     useEffect(() => {
         if (!isAuthReady || !userId || !db) return;
         // 修正路徑：讀取 users/{userId}/MovementDB (私有)
-        const unsub1 = onSnapshot(query(collection(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`)), (s) => setMovementDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsub1 = onSnapshot(query(collection(db, getMovementDBPath(APP_ID, userId))), (s) => setMovementDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
         // 修正路徑：讀取 users/{userId}/PlansDB (私有)
         const unsub2 = onSnapshot(query(collection(db, `artifacts/${APP_ID}/users/${userId}/PlansDB`)), (s) => setPlansDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
         
