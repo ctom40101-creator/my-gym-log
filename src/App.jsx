@@ -33,7 +33,7 @@ import StrengthScreen from './screens/StrengthScreen';
 import { calculateTotalVolume, estimate1RM } from './utils/calculations';
 import HistoryScreen from './screens/HistoryScreen';
 import MovementLogCard from './components/MovementLogCard';
-
+import ModalContainer from './components/ModalContainer';
 
 
 
@@ -99,20 +99,7 @@ const compressImage = (file) => {
 // 獨立元件區
 // ----------------------------------------------------
 
-// 通用模態框容器
-const ModalContainer = ({ isOpen, onClose, children }) => {
-    if (!isOpen) return null;
-    return (
-        <div className="fixed inset-0 z-[60] overflow-y-auto">
-            <div className="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity" onClick={onClose}></div>
-            <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-                <div className="relative transform overflow-hidden rounded-xl bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg w-full">
-                    {children}
-                </div>
-            </div>
-        </div>
-    );
-};
+
 
 
 
