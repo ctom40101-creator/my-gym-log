@@ -46,44 +46,8 @@ import {
   WEIGHT_DECREASE_MULTIPLIER,
 } from './constants';
 import { DEFAULT_MOVEMENTS } from './data/defaultMovements';
+import { compressImage } from './utils/image';
 
-
-
-// 圖片壓縮工具 (轉 Base64, 限制最大寬度與品質以節省空間)
-const compressImage = (file) => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (event) => {
-            const img = new Image();
-            img.src = event.target.result;
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const MAX_WIDTH = 800; // 限制最大寬度
-                let width = img.width;
-                let height = img.height;
-
-                if (width > MAX_WIDTH) {
-                    height *= MAX_WIDTH / width;
-                    width = MAX_WIDTH;
-                }
-
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                // 轉為 JPEG, 品質 0.6
-                resolve(canvas.toDataURL('image/jpeg', 0.6));
-            };
-            img.onerror = (error) => reject(error);
-        };
-        reader.onerror = (error) => reject(error);
-    });
-};
-
-// ----------------------------------------------------
-// 獨立元件區
-// ----------------------------------------------------
 
 
 
