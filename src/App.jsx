@@ -13,7 +13,6 @@ import {
   deleteUser 
 } from 'firebase/auth';
 import { doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
-import { APP_ID, INITIAL_AUTH_TOKEN, ADMIN_EMAIL } from './constants';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
   Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw, GripVertical, Camera, Image as ImageIcon, ChevronUp, Grid
@@ -37,7 +36,15 @@ import ModalContainer from './components/ModalContainer';
 import WeightResetModal from './components/WeightResetModal';
 import AddMovementModal from './components/AddMovementModal';
 import MovementEditor from './components/MovementEditor';
-
+import {
+  APP_ID,
+  INITIAL_AUTH_TOKEN,
+  ADMIN_EMAIL,
+  RPE_UP_THRESHOLD,
+  RPE_DOWN_THRESHOLD,
+  WEIGHT_INCREASE_MULTIPLIER,
+  WEIGHT_DECREASE_MULTIPLIER,
+} from './constants';
 
 
 
@@ -58,11 +65,7 @@ const DEFAULT_MOVEMENTS = [
   { name: '坐姿划船', type: '拉', bodyPart: '背', mainMuscle: '背闊肌、斜方肌', secondaryMuscle: '肱二頭肌', tips: '挺胸，專注背部擠壓', initialWeight: 20 },
 ];
 
-// --- RPE 漸進式負荷參數 ---
-const RPE_UP_THRESHOLD = 7;      
-const RPE_DOWN_THRESHOLD = 9.5; 
-const WEIGHT_INCREASE_MULTIPLIER = 1.025; 
-const WEIGHT_DECREASE_MULTIPLIER = 0.975; 
+
 
 // ----------------------------------------------------
 // 核心工具函式
