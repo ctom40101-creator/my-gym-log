@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    
+    <!-- 1. 設定 App 名稱 -->
+    <meta name="apple-mobile-web-app-title" content="健身日誌">
+    <meta name="application-name" content="健身日誌">
+    
+    <!-- 2. 設定 App 圖示 (改用外部 PNG 連結，這是 iOS 最能接受的格式) -->
+    <!-- 使用 Icons8 的免費啞鈴圖示作為範例 -->
+    <link rel="icon" type="image/png" href="https://img.icons8.com/fluency/192/dumbbell.png" />
+    <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/192/dumbbell.png" />
+
+    <!-- 3. 設定狀態列顏色 -->
+    <meta name="theme-color" content="#4F46E5" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+
+    <!-- 4. 禁止縮放 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    
+    <title>健身日誌</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
