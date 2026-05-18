@@ -1830,16 +1830,22 @@ ${moveList}
             return plan ? { label, type: 'plan', plan } : { label, type: 'missing' };
         });
 
-        const trainingDays = weeklyItems.filter(item => item.type === 'plan').length;
-        const restDays = weeklyItems.filter(item => item.type === 'rest').length;
-        const emptyDays = weeklyItems.filter(item => item.type === 'empty' || item.type === 'missing').length;
+        const firstEmptyIndex = weeklyItems.findIndex(item => item.type === 'empty' || item.type === 'missing');
+        const actualCycleItems = firstEmptyIndex === -1 ? weeklyItems : weeklyItems.slice(0, firstEmptyIndex);
+        const ignoredItems = firstEmptyIndex === -1 ? [] : weeklyItems.slice(firstEmptyIndex);
 
-        const weeklyTotalSets = weeklyItems.reduce((sum, item) => {
+        const trainingDays = actualCycleItems.filter(item => item.type === 'plan').length;
+        const restDays = actualCycleItems.filter(item => item.type === 'rest').length;
+        const emptyDays = ignoredItems.length;
+        const actualCycleDays = actualCycleItems.length;
+        const isFullSevenDayCycle = firstEmptyIndex === -1;
+
+        const weeklyTotalSets = actualCycleItems.reduce((sum, item) => {
             if (item.type !== 'plan') return sum;
             return sum + (item.plan.movements || []).reduce((planSum, movement) => planSum + (Number(movement.sets) || 0), 0);
         }, 0);
 
-        const bodyPartVolume = weeklyItems.reduce((volumeMap, item) => {
+        const bodyPartVolume = actualCycleItems.reduce((volumeMap, item) => {
             if (item.type !== 'plan') return volumeMap;
 
             (item.plan.movements || []).forEach(movement => {
@@ -1856,7 +1862,7 @@ ${moveList}
             .map(([bodyPart, sets]) => `- ${bodyPart}：約 ${sets} 組`)
             .join('\n') || '- 尚未安排訓練菜單';
 
-        const targetBodyPartScheduleText = weeklyItems.map(item => {
+        const targetBodyPartScheduleText = actualCycleItems.map(item => {
             if (item.type === 'rest') return `${item.label}：休息日`;
             if (item.type === 'empty') return `${item.label}：未安排`;
             if (item.type === 'missing') return `${item.label}：找不到這個菜單，可能已被刪除`;
@@ -1864,7 +1870,7 @@ ${moveList}
             return `${item.label}：${item.plan.name} → 想訓練部位：${item.plan.targetBodyPart || '未設定'}`;
         }).join('\n');
 
-        const weeklyScheduleText = weeklyItems.map(item => {
+        const weeklyScheduleText = actualCycleItems.map(item => {
             if (item.type === 'rest') return `${item.label}：休息日`;
             if (item.type === 'empty') return `${item.label}：未安排`;
             if (item.type === 'missing') return `${item.label}：找不到這個菜單，可能已被刪除`;
@@ -1884,7 +1890,52 @@ ${moveList}
             return `${item.label}：${item.plan.name}（想訓練部位：${targetBodyPart}，約 ${planTotalSets} 組）\n${movementsText}`;
         }).join('\n\n');
 
-        return `請用繁體中文，以健身教練角度評估我的 7 天分化訓練安排。\n\n我的規劃目標：想確認這樣的分化訓練是否合理，是否有需要調整的地方。\n單次菜單預設組間休息：每組 1 分半\n\n各天設定的目標訓練部位：\n${targetBodyPartScheduleText}\n\n七天安排：\n${weeklyScheduleText}\n\n本週初估總量：\n- 有安排訓練日：${trainingDays} 天\n- 休息日：${restDays} 天\n- 未安排：${emptyDays} 天\n- 全週總組數：約 ${weeklyTotalSets} 組\n\n依照動作資料初估的部位組數：\n${bodyPartVolumeText}\n\n請幫我評估：\n1. 這 7 天的分化訓練是否合理？有沒有同一肌群恢復時間太短的問題？\n2. 我每一天設定的「想訓練部位」和實際動作內容是否一致？有沒有名義上練胸、但實際肩或三頭量過多之類的問題？\n3. 訓練日與休息日的安排是否需要調整？請直接給我一版建議的 7 天排序。\n4. 哪些部位的每週訓練量可能太多、太少或剛好？請用表格列出。\n5. 如果我的目標是增肌與穩定進步，這樣的分化比較像推拉腿、上下肢、全身，還是混合型？是否適合我繼續使用？\n6. 是否有建議新增、刪除或合併的菜單日？\n7. 如果我不照你的建議，依然使用目前這 7 天安排，滿分 100 分，不及格 60 分，可直接執行為 80 分，你認為幾分？請說明原因。\n\n請最後用表格整理：原本安排、問題、建議調整、調整理由。`;
+        const ignoredScheduleText = ignoredItems.length > 0
+            ? ignoredItems.map(item => `${item.label}：未安排，不屬於本輪菜單，代表下一循環`).join('\n')
+            : '- 無，7 天皆屬於本輪循環';
+
+        return `請用繁體中文，以健身教練角度評估我的訓練分化安排。
+
+我的規劃目標：想確認這樣的分化訓練是否合理，是否有需要調整的地方。
+單次菜單預設組間休息：每組 1 分半
+
+重要判讀規則：
+1. 系統雖然提供第 1 天到第 7 天欄位，但不代表一定是 7 天循環。
+2. 第一個「未安排」代表本輪菜單結束，後續天數不屬於本輪菜單，代表下一循環。
+3. 「未安排」不是休息日，也不是漏排，請不要列入訓練量、恢復或週安排分析。
+4. 「休息日」才算本輪循環內的休息，必須計入循環天數。
+5. 若 7 天都沒有未安排，才視為完整 7 天循環。
+
+系統已依照上述規則先判定：
+- 實際循環天數：${actualCycleDays} 天
+- 有安排訓練日：${trainingDays} 天
+- 休息日：${restDays} 天
+- 未安排且不列入本輪分析：${emptyDays} 天
+- 是否為完整 7 天循環：${isFullSevenDayCycle ? '是' : '否'}
+- 本輪總組數：約 ${weeklyTotalSets} 組
+
+本輪各天設定的目標訓練部位：
+${targetBodyPartScheduleText}
+
+本輪菜單安排：
+${weeklyScheduleText}
+
+不列入本輪分析的天數：
+${ignoredScheduleText}
+
+依照動作資料初估的本輪部位組數：
+${bodyPartVolumeText}
+
+請幫我評估：
+1. 這個 ${actualCycleDays} 天循環的分化訓練是否合理？有沒有同一肌群恢復時間太短的問題？
+2. 每一天設定的「想訓練部位」和實際動作內容是否一致？有沒有名義上練胸、但實際肩或三頭量過多之類的問題？
+3. 訓練日與休息日的安排是否需要調整？請直接給我一版建議的循環排序。
+4. 哪些部位的本輪訓練量可能太多、太少或剛好？請用表格列出。
+5. 如果我的目標是增肌與穩定進步，這樣的分化比較像推拉腿、上下肢、全身，還是混合型？是否適合我繼續使用？
+6. 是否有建議新增、刪除或合併的菜單日？
+7. 如果我不照你的建議，依然使用目前這個循環安排，滿分 100 分，不及格 60 分，可直接執行為 80 分，你認為幾分？請說明原因。
+
+請最後用表格整理：原本安排、問題、建議調整、調整理由。`;
     }, [weeklyPlanSelections, plansDB, movementDB, WEEKLY_REST_DAY_VALUE]);
 
     const handleCopyWeeklySplitPrompt = async () => {
