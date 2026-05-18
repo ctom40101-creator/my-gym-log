@@ -1,4 +1,4 @@
-// V1.0
+// V1.1
 // MovementLogCard.jsx
 // 單一訓練動作紀錄卡片
 
@@ -6,6 +6,8 @@ import React, { useMemo } from 'react';
 import { ListChecks, PlayCircle, RotateCcw, TrendingUp } from 'lucide-react';
 import { calculateTotalVolume } from '../utils/calculations';
 import RpeSelectorAlwaysVisible from './RpeSelectorAlwaysVisible';
+
+const DEFAULT_EQUIPMENT_SOURCE = '健身房通用';
 
 function MovementLogCard({
   move,
@@ -28,6 +30,7 @@ function MovementLogCard({
   const totalVolume = calculateTotalVolume(move.sets);
   const movementDetail =
     movementDB.find((m) => m.name === move.movementName) || {};
+  const equipmentSource = movementDetail.equipmentSource || DEFAULT_EQUIPMENT_SOURCE;
 
   const repsOptions = useMemo(
     () => Array.from({ length: 20 }, (_, i) => 20 - i),
@@ -36,12 +39,17 @@ function MovementLogCard({
 
   return (
     <div className="bg-white p-4 rounded-xl shadow-lg border-l-4 border-indigo-500 space-y-3">
-      <div className="flex justify-between items-start border-b pb-2 mb-2">
-        <h4 className="text-lg font-bold text-gray-800">
-          {move.movementName}
-        </h4>
+      <div className="flex justify-between items-start border-b pb-2 mb-2 gap-2">
+        <div className="min-w-0">
+          <h4 className="text-lg font-bold text-gray-800 break-words">
+            {move.movementName}
+          </h4>
+          <div className="inline-flex mt-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-teal-50 text-teal-700 border border-teal-100">
+            器材來源：{equipmentSource}
+          </div>
+        </div>
 
-        <div className="flex space-x-3 items-center">
+        <div className="flex space-x-3 items-center shrink-0">
           <details className="relative group">
             <summary className="text-indigo-500 cursor-pointer list-none flex items-center text-xs">
               <ListChecks className="w-4 h-4 mr-1" />
@@ -69,6 +77,7 @@ function MovementLogCard({
               )}
 
               <div className="text-xs text-gray-500 border-t pt-2">
+                <p>器材來源: {equipmentSource}</p>
                 <p>部位: {movementDetail.bodyPart}</p>
                 <p>肌群: {movementDetail.mainMuscle}</p>
               </div>

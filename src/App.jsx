@@ -53,6 +53,68 @@ import { parseCSV } from './utils/csv';
 
 
 
+
+const DEFAULT_EQUIPMENT_SOURCE = '健身房通用';
+
+const normalizeEquipmentSource = (source) => {
+    const trimmed = String(source || '').trim();
+    return trimmed || DEFAULT_EQUIPMENT_SOURCE;
+};
+
+const stripMovementSourceSuffix = (name, source) => {
+    const trimmedName = String(name || '').trim();
+    const normalizedSource = normalizeEquipmentSource(source);
+    if (!trimmedName) return '';
+
+    const fullWidthSuffix = `（${normalizedSource}）`;
+    const halfWidthSuffix = `(${normalizedSource})`;
+
+    if (trimmedName.endsWith(fullWidthSuffix)) return trimmedName.slice(0, -fullWidthSuffix.length).trim();
+    if (trimmedName.endsWith(halfWidthSuffix)) return trimmedName.slice(0, -halfWidthSuffix.length).trim();
+    return trimmedName;
+};
+
+const getMovementEquipmentSource = (movement) => normalizeEquipmentSource(movement?.equipmentSource);
+
+const getMovementBaseName = (movement) => {
+    if (!movement) return '';
+    const explicitBaseName = String(movement.baseName || '').trim();
+    if (explicitBaseName) return explicitBaseName;
+    return stripMovementSourceSuffix(movement.name || '', getMovementEquipmentSource(movement));
+};
+
+const buildMovementNameWithSource = (baseName, source) => {
+    const normalizedBaseName = String(baseName || '').trim();
+    const normalizedSource = normalizeEquipmentSource(source);
+    if (!normalizedBaseName) return '';
+    return normalizedSource === DEFAULT_EQUIPMENT_SOURCE
+        ? normalizedBaseName
+        : `${stripMovementSourceSuffix(normalizedBaseName, normalizedSource)}（${normalizedSource}）`;
+};
+
+const makeMovementSavePayload = (movement) => {
+    const equipmentSource = getMovementEquipmentSource(movement);
+    const baseName = stripMovementSourceSuffix(String(movement?.name || movement?.baseName || '').trim(), equipmentSource);
+    const finalName = buildMovementNameWithSource(baseName, equipmentSource);
+
+    return {
+        ...movement,
+        id: movement?.id,
+        name: finalName,
+        baseName,
+        equipmentSource,
+        initialWeight: Number(movement?.initialWeight || 0)
+    };
+};
+
+const makeEditableMovement = (movement) => ({
+    ...movement,
+    name: getMovementBaseName(movement),
+    baseName: getMovementBaseName(movement),
+    equipmentSource: getMovementEquipmentSource(movement)
+});
+
+
 // ----------------------------------------------------
 // AuthScreen
 // ----------------------------------------------------
@@ -1183,7 +1245,15 @@ const LibraryScreen = ({ weightHistory, movementDB, db, APP_ID, userId, logDB, p
     }, [userId, db, APP_ID]);
     const [importWithNickname, setImportWithNickname] = useState(false);
     const categories = ['胸', '背', '腿', '肩', '手臂', '核心', '全身'];
-    const filteredMovements = movementDB.filter(m => (!filter || m.bodyPart === filter || m.name.includes(filter)));
+    const equipmentSourceOptions = useMemo(() => {
+        const sources = movementDB.map(m => getMovementEquipmentSource(m));
+        return Array.from(new Set([DEFAULT_EQUIPMENT_SOURCE, ...sources])).filter(Boolean).sort((a, b) => {
+            if (a === DEFAULT_EQUIPMENT_SOURCE) return -1;
+            if (b === DEFAULT_EQUIPMENT_SOURCE) return 1;
+            return a.localeCompare(b, 'zh-Hant');
+        });
+    }, [movementDB]);
+    const filteredMovements = movementDB.filter(m => (!filter || m.bodyPart === filter || m.name.includes(filter) || getMovementEquipmentSource(m).includes(filter)));
 
     const toggleSelection = (id) => {
         const newSet = new Set(selectedItems);
@@ -1216,10 +1286,10 @@ const LibraryScreen = ({ weightHistory, movementDB, db, APP_ID, userId, logDB, p
         try { await batch.commit(); setLastImportedIds([]); alert("已復原上一次匯入！"); } catch (error) { console.error("Undo failed:", error); alert("復原失敗，請稍後再試。"); }
     };
     const handleExportCSV = () => {
-        const headers = "暱稱,名稱,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量\n";
+        const headers = "暱稱,名稱,器材來源,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量\n";
         const rows = movementDB.map(m => {
             const escape = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
-            return `${escape(nickname)},${escape(m.name)},${escape(m.type)},${escape(m.bodyPart)},${escape(m.mainMuscle)},${escape(m.secondaryMuscle)},${escape(m.tips)},${escape(m.link)},${escape(m.initialWeight)}`;
+            return `${escape(nickname)},${escape(getMovementBaseName(m))},${escape(getMovementEquipmentSource(m))},${escape(m.type)},${escape(m.bodyPart)},${escape(m.mainMuscle)},${escape(m.secondaryMuscle)},${escape(m.tips)},${escape(m.link)},${escape(m.initialWeight)}`;
         }).join("\n");
         const blob = new Blob(["\uFEFF" + headers + rows], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
@@ -1231,9 +1301,9 @@ const LibraryScreen = ({ weightHistory, movementDB, db, APP_ID, userId, logDB, p
         document.body.removeChild(link);
     };
     const handleDownloadSampleCSV = () => {
-        const headers = "暱稱,名稱,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量\n";
-        const sampleRow1 = `"範例教練","臥推(教練版)","推","胸","胸大肌","三頭肌","保持背部挺直, 不要聳肩","",20\n`;
-        const sampleRow2 = `,"深蹲(無暱稱)","腿","腿","股四頭肌","臀大肌","膝蓋對準腳尖","",20`;
+        const headers = "暱稱,名稱,器材來源,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量\n";
+        const sampleRow1 = `"範例教練","臥推","成吉思汗","推","胸","胸大肌","三頭肌","保持背部挺直, 不要聳肩","",20\n`;
+        const sampleRow2 = `,"深蹲","健身房通用","腿","腿","股四頭肌","臀大肌","膝蓋對準腳尖","",20`;
         const blob = new Blob(["\uFEFF" + headers + sampleRow1 + sampleRow2], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -1254,31 +1324,75 @@ const LibraryScreen = ({ weightHistory, movementDB, db, APP_ID, userId, logDB, p
             const rows = rawData.slice(1).filter(r => r.length > 0 && r.some(c => c.trim() !== ''));
             const batch = writeBatch(db);
             let count = 0; let skippedCount = 0; const newIds = []; 
-            rows.forEach(cols => {
-                let sourceNickname = ''; let name = ''; let dataStartIdx = 0;
-                if (cols.length >= 9) { sourceNickname = cols[0]; name = cols[1]; dataStartIdx = 1; } 
-                else if (cols.length >= 8) { name = cols[0]; dataStartIdx = 0; } 
-                else { if (cols.length > 1) skippedCount++; return; }
-                const type = cols[dataStartIdx+1]?.trim();
-                const bodyPart = cols[dataStartIdx+2]?.trim();
-                if (name && type && bodyPart) {
-                    name = name.trim();
-                    let finalName = name;
-                    if (importWithNickname && sourceNickname && sourceNickname.trim()) { finalName = `(來自${sourceNickname.trim()})${name}`; }
-                    const ref = doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, finalName); 
-                    batch.set(ref, {
-                        name: finalName,
-                        type: type,
-                        bodyPart: bodyPart,
-                        mainMuscle: cols[dataStartIdx+3]?.trim() || '',
-                        secondaryMuscle: cols[dataStartIdx+4]?.trim() || '',
-                        tips: cols[dataStartIdx+5]?.trim() || '',
-                        link: cols[dataStartIdx+6]?.trim() || '',
-                        initialWeight: Number(cols[dataStartIdx+7]?.trim()) || 20
-                    });
-                    count++; newIds.push(finalName);
-                } else { skippedCount++; }
-            });
+            rows.forEach(cols => {
+                let sourceNickname = '';
+                let rawName = '';
+                let equipmentSource = DEFAULT_EQUIPMENT_SOURCE;
+                let dataStartIdx = 0;
+
+                // 新版 CSV：暱稱,名稱,器材來源,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量
+                if (cols.length >= 10) {
+                    sourceNickname = cols[0];
+                    rawName = cols[1];
+                    equipmentSource = cols[2];
+                    dataStartIdx = 2;
+                } else if (cols.length >= 9) {
+                    // 舊版 CSV：暱稱,名稱,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量
+                    sourceNickname = cols[0];
+                    rawName = cols[1];
+                    dataStartIdx = 1;
+                } else if (cols.length >= 8) {
+                    // 舊版無暱稱 CSV：名稱,類型,部位,主要肌群,協同肌群,提示,影片連結,初始重量
+                    rawName = cols[0];
+                    dataStartIdx = 0;
+                } else {
+                    if (cols.length > 1) skippedCount++;
+                    return;
+                }
+
+                const type = cols[dataStartIdx+1]?.trim();
+                const bodyPart = cols[dataStartIdx+2]?.trim();
+
+                if (rawName && type && bodyPart) {
+                    let baseName = rawName.trim();
+                    const source = normalizeEquipmentSource(equipmentSource);
+                    if (importWithNickname && sourceNickname && sourceNickname.trim()) {
+                        baseName = `(來自${sourceNickname.trim()})${baseName}`;
+                    }
+
+                    const finalName = buildMovementNameWithSource(baseName, source);
+                    const payload = {
+                        name: finalName,
+                        baseName: stripMovementSourceSuffix(baseName, source),
+                        equipmentSource: source,
+                        type,
+                        bodyPart,
+                        mainMuscle: cols[dataStartIdx+3]?.trim() || '',
+                        secondaryMuscle: cols[dataStartIdx+4]?.trim() || '',
+                        tips: cols[dataStartIdx+5]?.trim() || '',
+                        link: cols[dataStartIdx+6]?.trim() || '',
+                        initialWeight: Number(cols[dataStartIdx+7]?.trim()) || 20
+                    };
+
+                    batch.set(doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, finalName), payload);
+                    count++;
+                    newIds.push(finalName);
+
+                    const universalName = buildMovementNameWithSource(payload.baseName, DEFAULT_EQUIPMENT_SOURCE);
+                    const alreadyHasUniversal = movementDB.some(m => getMovementBaseName(m) === payload.baseName && getMovementEquipmentSource(m) === DEFAULT_EQUIPMENT_SOURCE) || newIds.includes(universalName);
+                    if (source !== DEFAULT_EQUIPMENT_SOURCE && !alreadyHasUniversal) {
+                        batch.set(doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, universalName), {
+                            ...payload,
+                            name: universalName,
+                            equipmentSource: DEFAULT_EQUIPMENT_SOURCE
+                        });
+                        count++;
+                        newIds.push(universalName);
+                    }
+                } else {
+                    skippedCount++;
+                }
+            });
             if (count > 0) {
                 try { await batch.commit(); setLastImportedIds(newIds); let msg = `成功匯入 ${count} 個動作！\n如果不滿意，可以點擊「復原」按鈕撤銷。`; if (skippedCount > 0) { msg += `\n注意：有 ${skippedCount} 筆資料因欄位不全（名稱/類型/部位為空）而略過。`; } alert(msg); } catch (error) { console.error("Import failed:", error); alert("匯入失敗，請檢查檔案格式。"); }
             } else { if (skippedCount > 0) { alert(`所有資料 (${skippedCount} 筆) 皆因欄位不全而無法匯入。`); } else { alert("檔案中沒有有效的資料列。"); } }
@@ -1287,109 +1401,139 @@ const LibraryScreen = ({ weightHistory, movementDB, db, APP_ID, userId, logDB, p
         e.target.value = null; 
     };
 
-    const handleSaveMovement = async () => {
-        if (!db) return;
-        const newName = editingMove.name?.trim();
-        if (!newName) return alert("請輸入動作名稱");
-        if (!editingMove.type) return alert("請選擇動作類型");
-        if (!editingMove.bodyPart) return alert("請選擇訓練部位");
+    const handleSaveMovement = async () => {
+        if (!db) return;
 
-        const oldName = editingMove.id; // editingMove.id holds the original doc ID
-        const isRenaming = oldName && oldName !== newName;
+        const savePayload = makeMovementSavePayload(editingMove || {});
+        const newName = savePayload.name;
+        const baseName = savePayload.baseName;
+        const equipmentSource = savePayload.equipmentSource;
 
-        if (isRenaming) {
-            if (!confirm(`您確定要將 "${oldName}" 重新命名為 "${newName}" 嗎？\n\n這將會：\n1. 更新動作庫\n2. 同步修改所有包含此動作的歷史紀錄 (Log)\n3. 同步修改所有包含此動作的菜單 (Menu)\n\n此操作無法復原。`)) return;
-            
-            setIsProcessing(true);
-            try {
-                const batch = writeBatch(db);
+        if (!baseName) return alert("請輸入動作名稱");
+        if (!editingMove.type) return alert("請選擇動作類型");
+        if (!editingMove.bodyPart) return alert("請選擇訓練部位");
 
-                // 1. Create new movement doc & Delete old
-                const newRef = doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, newName);
-                const oldRef = doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, oldName);
-                
-                batch.set(newRef, { ...editingMove, name: newName, initialWeight: Number(editingMove.initialWeight||0) });
-                batch.delete(oldRef);
+        const oldName = editingMove.id; // editingMove.id holds the original doc ID
+        const isRenaming = oldName && oldName !== newName;
+        const universalName = buildMovementNameWithSource(baseName, DEFAULT_EQUIPMENT_SOURCE);
+        const shouldCreateUniversalVersion = equipmentSource !== DEFAULT_EQUIPMENT_SOURCE && !movementDB.some(m =>
+            getMovementBaseName(m) === baseName && getMovementEquipmentSource(m) === DEFAULT_EQUIPMENT_SOURCE
+        );
+        const isCreatingVariantFromUniversal = Boolean(oldName && oldName === universalName && equipmentSource !== DEFAULT_EQUIPMENT_SOURCE);
 
-                // 2. Scan and Update Logs
-                // Note: Client-side filtering is used here because Firestore array queries are limited for partial object matches.
-                // Assuming logDB and plansDB are passed as props from App (snapshot data).
-                
-                logDB.forEach(log => {
-                    if (log.movements && Array.isArray(log.movements)) {
-                        let hasChange = false;
-                        const updatedMovements = log.movements.map(m => {
-                            if (m.movementName === oldName) {
-                                hasChange = true;
-                                return { ...m, movementName: newName };
-                            }
-                            return m;
-                        });
+        const universalPayload = {
+            ...savePayload,
+            name: universalName,
+            equipmentSource: DEFAULT_EQUIPMENT_SOURCE
+        };
 
-                        // Check reset logic too
-                        if (log.isReset && log.movementName === oldName) {
-                             const logRef = doc(db, `artifacts/${APP_ID}/users/${userId}/LogDB`, log.id);
-                             batch.update(logRef, { movementName: newName });
-                        }
+        if (isRenaming) {
+            const confirmMessage = isCreatingVariantFromUniversal
+                ? `您正在把「${oldName}」另存成「${newName}」。\n\n系統會保留原本的健身房通用版，並新增這個器材來源版本。`
+                : `您確定要將 "${oldName}" 重新命名為 "${newName}" 嗎？\n\n這將會：\n1. 更新動作庫\n2. 同步修改所有包含此動作的歷史紀錄 (Log)\n3. 同步修改所有包含此動作的菜單 (Menu)\n\n此操作無法復原。`;
 
-                        if (hasChange) {
-                            const logRef = doc(db, `artifacts/${APP_ID}/users/${userId}/LogDB`, log.id);
-                            batch.update(logRef, { movements: updatedMovements });
-                        }
-                    }
-                });
+            if (!confirm(confirmMessage)) return;
+            setIsProcessing(true);
+            try {
+                const batch = writeBatch(db);
+                const newRef = doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, newName);
+                const oldRef = doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, oldName);
 
-                // 3. Scan and Update Plans
-                plansDB.forEach(plan => {
-                    if (plan.movements && Array.isArray(plan.movements)) {
-                        let hasChange = false;
-                        const updatedMovements = plan.movements.map(m => {
-                            if (m.name === oldName) {
-                                hasChange = true;
-                                return { ...m, name: newName };
-                            }
-                            return m;
-                        });
+                batch.set(newRef, savePayload);
+                if (shouldCreateUniversalVersion) {
+                    batch.set(doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, universalName), universalPayload);
+                }
+                if (!isCreatingVariantFromUniversal) {
+                    batch.delete(oldRef);
+                }
 
-                        if (hasChange) {
-                            const planRef = doc(db, `artifacts/${APP_ID}/users/${userId}/PlansDB`, plan.id);
-                            batch.update(planRef, { movements: updatedMovements });
-                        }
-                    }
-                });
+                if (!isCreatingVariantFromUniversal) {
+                    // 2. Scan and Update Logs
+                    // Note: Client-side filtering is used here because Firestore array queries are limited for partial object matches.
+                    logDB.forEach(log => {
+                        if (log.movements && Array.isArray(log.movements)) {
+                            let hasChange = false;
+                            const updatedMovements = log.movements.map(m => {
+                                if (m.movementName === oldName) {
+                                    hasChange = true;
+                                    return { ...m, movementName: newName };
+                                }
+                                return m;
+                            });
 
-                await batch.commit();
-                alert(`已成功將 "${oldName}" 更名為 "${newName}"，並同步更新了相關紀錄。`);
-                setIsEditing(false);
-                setEditingMove(null);
-                setFilter(''); 
+                            if (log.isReset && log.movementName === oldName) {
+                                const logRef = doc(db, `artifacts/${APP_ID}/users/${userId}/LogDB`, log.id);
+                                batch.update(logRef, { movementName: newName });
+                            }
 
-            } catch (e) {
-                console.error("Rename Error:", e);
-                alert("更新失敗，請稍後再試。");
-            } finally {
-                setIsProcessing(false);
-            }
+                            if (hasChange) {
+                                const logRef = doc(db, `artifacts/${APP_ID}/users/${userId}/LogDB`, log.id);
+                                batch.update(logRef, { movements: updatedMovements });
+                            }
+                        }
+                    });
 
-        } else {
-            // Normal Save (Add new or Update existing without rename)
-            const docId = oldName || newName; 
-            try { 
-                await setDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, docId), { ...editingMove, initialWeight: Number(editingMove.initialWeight||0) }); 
-                setIsEditing(false); 
-                setEditingMove(null); 
-                if (!oldName) setFilter(''); 
-            } catch(e) { 
-                console.error(e); 
-            }
-        }
-    };
+                    // 3. Scan and Update Plans
+                    plansDB.forEach(plan => {
+                        if (plan.movements && Array.isArray(plan.movements)) {
+                            let hasChange = false;
+                            const updatedMovements = plan.movements.map(m => {
+                                if (m.name === oldName) {
+                                    hasChange = true;
+                                    return { ...m, name: newName };
+                                }
+                                return m;
+                            });
+
+                            if (hasChange) {
+                                const planRef = doc(db, `artifacts/${APP_ID}/users/${userId}/PlansDB`, plan.id);
+                                batch.update(planRef, { movements: updatedMovements });
+                            }
+                        }
+                    });
+                }
+
+                await batch.commit();
+                alert(isCreatingVariantFromUniversal ? `已新增「${newName}」，並保留「${universalName}」。` : `已成功更新為「${newName}」。`);
+                setIsEditing(false);
+                setEditingMove(null);
+                setFilter('');
+            } catch (e) {
+                console.error("Rename Error:", e);
+                alert("更新失敗，請稍後再試。");
+            } finally {
+                setIsProcessing(false);
+            }
+
+        } else {
+            // Normal Save (Add new or Update existing without rename)
+            try {
+                if (shouldCreateUniversalVersion) {
+                    const batch = writeBatch(db);
+                    batch.set(doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, newName), savePayload);
+                    batch.set(doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, universalName), universalPayload);
+                    await batch.commit();
+                    alert(`已儲存「${newName}」，並自動新增「${universalName}」健身房通用版。`);
+                } else {
+                    const docId = oldName || newName;
+                    await setDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, docId), savePayload);
+                }
+
+                setIsEditing(false);
+                setEditingMove(null);
+                if (!oldName) setFilter('');
+            } catch(e) {
+                console.error(e);
+                alert("儲存失敗，請稍後再試。");
+            }
+        }
+    };
     const handleDeleteMovement = async (id) => { if (confirm('刪除?')) await deleteDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/MovementDB`, id)); };
 
     return (
         <>
-            <MovementEditor isOpen={isEditing} onClose={() => setIsEditing(false)} onSave={handleSaveMovement} data={editingMove || {}} onChange={(f, v) => setEditingMove(p => ({ ...p, [f]: v }))} isProcessing={isProcessing} />
-            <div className="flex gap-2 mb-4"><button onClick={() => {setEditingMove({ name: '', type: '', bodyPart: '', mainMuscle: '', secondaryMuscle: '', tips: '', link: '', initialWeight: 0 }); setIsEditing(true);}} className="flex-1 bg-teal-500 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>新增動作</button><button onClick={() => setIsBatchMode(!isBatchMode)} className={`px-4 rounded-xl font-bold border ${isBatchMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-600'}`}>{isBatchMode ? '完成' : '管理'}</button></div>
+            <MovementEditor isOpen={isEditing} onClose={() => setIsEditing(false)} onSave={handleSaveMovement} data={editingMove || {}} onChange={(f, v) => setEditingMove(p => ({ ...p, [f]: v }))} isProcessing={isProcessing} equipmentSourceOptions={equipmentSourceOptions} />
+            <div className="flex gap-2 mb-4"><button onClick={() => {setEditingMove({ name: '', baseName: '', equipmentSource: DEFAULT_EQUIPMENT_SOURCE, type: '', bodyPart: '', mainMuscle: '', secondaryMuscle: '', tips: '', link: '', initialWeight: 0 }); setIsEditing(true);}} className="flex-1 bg-teal-500 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>新增動作</button><button onClick={() => setIsBatchMode(!isBatchMode)} className={`px-4 rounded-xl font-bold border ${isBatchMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-600'}`}>{isBatchMode ? '完成' : '管理'}</button></div>
             {isBatchMode && (<div className="bg-gray-100 p-3 rounded-xl mb-4 animate-fade-in"><div className="flex flex-col gap-3"><div className="flex justify-between items-center border-b pb-2 border-gray-200"><div className="text-sm font-bold text-gray-600">匯出動作庫</div><button onClick={handleExportCSV} className="bg-white border border-indigo-200 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center hover:bg-indigo-50"><Download className="w-3 h-3 mr-1" /> 匯出 CSV (含暱稱)</button></div><div className="flex flex-col gap-2"><div className="text-sm font-bold text-gray-600">匯入動作</div><div className="flex items-center gap-2 mb-1"><input type="checkbox" id="importNick" checked={importWithNickname} onChange={e=>setImportWithNickname(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" /><label htmlFor="importNick" className="text-xs text-gray-600">保留來源註記 (來自 XXX)</label></div><div className="flex gap-2"><label className="flex-1 cursor-pointer bg-indigo-600 text-white px-3 py-2 rounded-lg text-xs font-bold flex items-center justify-center hover:bg-indigo-700 shadow-sm"><Upload className="w-3 h-3 mr-1" /> 選擇檔案匯入<input type="file" accept=".csv" className="hidden" onChange={handleImportCSV} /></label><button onClick={handleDownloadSampleCSV} className="bg-white border border-gray-300 text-gray-500 px-3 py-2 rounded-lg text-xs font-bold hover:bg-gray-50">下載範例</button></div></div><div className="flex justify-between items-center pt-2 border-t border-gray-200">{lastImportedIds.length > 0 ? (<button onClick={handleUndoImport} className="bg-yellow-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center shadow-sm animate-pulse"><Undo2 className="w-3 h-3 mr-1" /> 復原上一次匯入</button>) : <div></div>}{selectedItems.size > 0 && (<button onClick={handleBatchDelete} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center"><Trash2 className="w-3 h-3 mr-1" /> 刪除 ({selectedItems.size})</button>)}</div></div></div>)}
             <div className="flex justify-between space-x-2 mb-4 overflow-x-auto"><button onClick={() => setFilter('')} className={`p-2 rounded-full text-sm font-semibold whitespace-nowrap ${!filter ? 'bg-indigo-600 text-white' : 'bg-white'}`}>全部</button>{categories.map(t => <button key={t} onClick={() => setFilter(t)} className={`p-2 rounded-full text-sm font-semibold whitespace-nowrap ${filter === t ? 'bg-indigo-600 text-white' : 'bg-white'}`}>{t}</button>)}</div>
             {isBatchMode && (
@@ -1399,9 +1543,35 @@ const LibraryScreen = ({ weightHistory, movementDB, db, APP_ID, userId, logDB, p
                 </div>
             )}
             <div className="space-y-3">{filteredMovements.map(move => {
-                const record = weightHistory[move.name]?.absoluteBest;
-                return (<div key={move.id} className={`bg-white p-4 rounded-xl shadow-lg border transition-all ${isBatchMode && selectedItems.has(move.id) ? 'border-indigo-500 bg-indigo-50' : 'border-indigo-100'}`} onClick={() => isBatchMode && toggleSelection(move.id)}><div className="flex justify-between items-start"><div className="flex items-center">{isBatchMode && (selectedItems.has(move.id) ? <CheckSquare className="w-5 h-5 text-indigo-600 mr-3 shrink-0"/> : <Square className="w-5 h-5 text-gray-300 mr-3 shrink-0"/>)}<h3 className="text-xl font-bold text-gray-800">{move.name}</h3></div>{!isBatchMode && record && <div className="flex items-center bg-yellow-50 px-2 py-1 rounded-md border border-yellow-200"><Crown className="w-3 h-3 text-yellow-600 mr-1" /><span className="text-xs font-bold text-yellow-700">PR: {record.weight}kg x {record.reps}</span></div>}</div><div className="text-sm mt-1 mb-2 flex justify-between items-center pl-8"><div><span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 mr-2">{move.type}</span><span className="text-gray-600">{move.bodyPart} - {move.mainMuscle}</span></div>{!isBatchMode && <div className="flex space-x-2"><button onClick={(e) => {e.stopPropagation(); setEditingMove(move); setIsEditing(true);}} className="text-indigo-500 p-1"><Edit className="w-5 h-5"/></button><button onClick={(e) => {e.stopPropagation(); handleDeleteMovement(move.id, move.name);}} className="text-red-500 p-1"><Trash2 className="w-5 h-5"/></button></div>}</div>{!isBatchMode && <details className="text-gray-600 border-t pt-2 mt-2 pl-8"><summary className="font-semibold cursor-pointer">動作提示</summary><p className="mt-2 text-sm">{move.tips}</p>{move.secondaryMuscle && <p className="text-xs text-gray-500 mt-1">協同: {move.secondaryMuscle}</p>}</details>}</div>);
-            })}</div>
+                const record = weightHistory[move.name]?.absoluteBest;
+                const equipmentSource = getMovementEquipmentSource(move);
+                return (
+                    <div
+                        key={move.id}
+                        className={`bg-white p-4 rounded-xl shadow-lg border transition-all ${isBatchMode && selectedItems.has(move.id) ? 'border-indigo-500 bg-indigo-50' : 'border-indigo-100'}`}
+                        onClick={() => isBatchMode && toggleSelection(move.id)}
+                    >
+                        <div className="flex justify-between items-start gap-2">
+                            <div className="flex items-start min-w-0">
+                                {isBatchMode && (selectedItems.has(move.id) ? <CheckSquare className="w-5 h-5 text-indigo-600 mr-3 shrink-0"/> : <Square className="w-5 h-5 text-gray-300 mr-3 shrink-0"/>)}
+                                <div className="min-w-0">
+                                    <h3 className="text-xl font-bold text-gray-800 break-words">{move.name}</h3>
+                                    <div className="mt-1 flex flex-wrap gap-1">
+                                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-teal-50 text-teal-700 border border-teal-100">器材來源：{equipmentSource}</span>
+                                        <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-600">{move.type}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            {!isBatchMode && record && <div className="flex items-center bg-yellow-50 px-2 py-1 rounded-md border border-yellow-200 shrink-0"><Crown className="w-3 h-3 text-yellow-600 mr-1" /><span className="text-xs font-bold text-yellow-700">PR: {record.weight}kg x {record.reps}</span></div>}
+                        </div>
+                        <div className="text-sm mt-2 mb-2 flex justify-between items-center pl-8">
+                            <div><span className="text-gray-600">{move.bodyPart} - {move.mainMuscle}</span></div>
+                            {!isBatchMode && <div className="flex space-x-2"><button onClick={(e) => {e.stopPropagation(); setEditingMove(makeEditableMovement(move)); setIsEditing(true);}} className="text-indigo-500 p-1"><Edit className="w-5 h-5"/></button><button onClick={(e) => {e.stopPropagation(); handleDeleteMovement(move.id, move.name);}} className="text-red-500 p-1"><Trash2 className="w-5 h-5"/></button></div>}
+                        </div>
+                        {!isBatchMode && <details className="text-gray-600 border-t pt-2 mt-2 pl-8"><summary className="font-semibold cursor-pointer">動作提示</summary><p className="mt-2 text-sm">{move.tips}</p><p className="text-xs text-gray-500 mt-1">器材來源: {equipmentSource}</p>{move.secondaryMuscle && <p className="text-xs text-gray-500 mt-1">協同: {move.secondaryMuscle}</p>}</details>}
+                    </div>
+                );
+            })}</div>
         </>
     );
 };
@@ -1413,6 +1583,8 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
     const [planMovements, setPlanMovements] = useState([]);
     const [tempSelectedMove, setTempSelectedMove] = useState('');
     const [aiEvalBodyPart, setAiEvalBodyPart] = useState('');
+    const WEEKLY_REST_DAY_VALUE = '__REST_DAY__';
+    const [weeklyPlanSelections, setWeeklyPlanSelections] = useState(Array(7).fill(''));
     
     // MenuScreen: Batch Mode & Filter
     const [isBatchMode, setIsBatchMode] = useState(false);
@@ -1456,6 +1628,7 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
         const plan = editingPlanId ? plansDB.find(p => p.id === editingPlanId) : null;
         setPlanName(plan ? plan.name : '');
         setPlanMovements(plan ? plan.movements : []);
+        setAiEvalBodyPart(plan ? (plan.targetBodyPart || '') : '');
     }, [editingPlanId, plansDB]);
 
     const handleMovementUpdate = (index, field, value) => {
@@ -1467,14 +1640,23 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
     const addMovementToPlan = (movementName) => {
         const movementDetail = movementDB.find(m => m.name === movementName);
         if (!movementDetail) return;
-        setPlanMovements([...planMovements, { name: movementName, sets: 4, targetReps: 12, type: movementDetail.type }]);
+        setPlanMovements([...planMovements, { name: movementName, baseName: getMovementBaseName(movementDetail), equipmentSource: getMovementEquipmentSource(movementDetail), sets: 4, targetReps: 12, type: movementDetail.type }]);
     };
 
     const handleSave = async () => {
         if (!db || !userId || !planName) return;
         const docId = editingPlanId || `plan-${Date.now()}`;
-        await setDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/PlansDB`, docId), { name: planName, movements: planMovements, userId }); // 修正為 users 路徑
-        setIsCreating(false); setEditingPlanId(null);
+        await setDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/PlansDB`, docId), {
+            name: planName,
+            movements: planMovements,
+            targetBodyPart: aiEvalBodyPart.trim(),
+            userId
+        }, { merge: true }); // 修正為 users 路徑
+        setIsCreating(false);
+        setEditingPlanId(null);
+        setPlanName('');
+        setPlanMovements([]);
+        setAiEvalBodyPart('');
     };
     const handleDelete = async (id) => { if(confirm('刪除?')) await deleteDoc(doc(db, `artifacts/${APP_ID}/users/${userId}/PlansDB`, id)); }; // 修正為 users 路徑
 
@@ -1527,9 +1709,10 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
         const moveList = planMovements.length > 0
             ? planMovements.map((m, index) => {
                 const movementDetail = movementDB.find(dbMove => dbMove.name === m.name);
+                const equipmentSource = movementDetail ? `，器材來源：${getMovementEquipmentSource(movementDetail)}` : (m.equipmentSource ? `，器材來源：${m.equipmentSource}` : '');
                 const mainMuscle = movementDetail?.mainMuscle ? `，主肌群：${movementDetail.mainMuscle}` : '';
                 const secondaryMuscle = movementDetail?.secondaryMuscle ? `，協同肌群：${movementDetail.secondaryMuscle}` : '';
-                return `${index + 1}. ${m.name}：${m.sets || 0} 組 x ${m.targetReps || 0} 下${mainMuscle}${secondaryMuscle}`;
+                return `${index + 1}. ${m.name}：${m.sets || 0} 組 x ${m.targetReps || 0} 下${equipmentSource}${mainMuscle}${secondaryMuscle}`;
             }).join('\n')
             : '尚未加入動作';
 
@@ -1586,10 +1769,113 @@ ${moveList}
         }
     };
 
+    // MenuScreen: 7 天分化訓練 AI 評估提示詞
+    const handleWeeklyPlanChange = (dayIndex, value) => {
+        const nextSelections = [...weeklyPlanSelections];
+        nextSelections[dayIndex] = value;
+        setWeeklyPlanSelections(nextSelections);
+    };
+
+    const hasWeeklyTrainingSelection = weeklyPlanSelections.some(planId => planId && planId !== WEEKLY_REST_DAY_VALUE);
+
+    const weeklySplitPrompt = useMemo(() => {
+        const weeklyItems = weeklyPlanSelections.map((planId, index) => {
+            const label = `第 ${index + 1} 天`;
+            if (!planId) return { label, type: 'empty' };
+            if (planId === WEEKLY_REST_DAY_VALUE) return { label, type: 'rest' };
+
+            const plan = plansDB.find(p => p.id === planId);
+            return plan ? { label, type: 'plan', plan } : { label, type: 'missing' };
+        });
+
+        const trainingDays = weeklyItems.filter(item => item.type === 'plan').length;
+        const restDays = weeklyItems.filter(item => item.type === 'rest').length;
+        const emptyDays = weeklyItems.filter(item => item.type === 'empty' || item.type === 'missing').length;
+
+        const weeklyTotalSets = weeklyItems.reduce((sum, item) => {
+            if (item.type !== 'plan') return sum;
+            return sum + (item.plan.movements || []).reduce((planSum, movement) => planSum + (Number(movement.sets) || 0), 0);
+        }, 0);
+
+        const bodyPartVolume = weeklyItems.reduce((volumeMap, item) => {
+            if (item.type !== 'plan') return volumeMap;
+
+            (item.plan.movements || []).forEach(movement => {
+                const movementDetail = movementDB.find(dbMove => dbMove.name === movement.name);
+                const bodyPart = movementDetail?.bodyPart || movementDetail?.mainMuscle || '未分類';
+                volumeMap[bodyPart] = (volumeMap[bodyPart] || 0) + (Number(movement.sets) || 0);
+            });
+
+            return volumeMap;
+        }, {});
+
+        const bodyPartVolumeText = Object.entries(bodyPartVolume)
+            .sort((a, b) => b[1] - a[1])
+            .map(([bodyPart, sets]) => `- ${bodyPart}：約 ${sets} 組`)
+            .join('\n') || '- 尚未安排訓練菜單';
+
+        const targetBodyPartScheduleText = weeklyItems.map(item => {
+            if (item.type === 'rest') return `${item.label}：休息日`;
+            if (item.type === 'empty') return `${item.label}：未安排`;
+            if (item.type === 'missing') return `${item.label}：找不到這個菜單，可能已被刪除`;
+
+            return `${item.label}：${item.plan.name} → 想訓練部位：${item.plan.targetBodyPart || '未設定'}`;
+        }).join('\n');
+
+        const weeklyScheduleText = weeklyItems.map(item => {
+            if (item.type === 'rest') return `${item.label}：休息日`;
+            if (item.type === 'empty') return `${item.label}：未安排`;
+            if (item.type === 'missing') return `${item.label}：找不到這個菜單，可能已被刪除`;
+
+            const planTotalSets = (item.plan.movements || []).reduce((sum, movement) => sum + (Number(movement.sets) || 0), 0);
+            const movementsText = (item.plan.movements || []).length > 0
+                ? item.plan.movements.map((movement, movementIndex) => {
+                    const movementDetail = movementDB.find(dbMove => dbMove.name === movement.name);
+                    const equipmentSource = movementDetail ? `，器材來源：${getMovementEquipmentSource(movementDetail)}` : (movement.equipmentSource ? `，器材來源：${movement.equipmentSource}` : '');
+                    const bodyPart = movementDetail?.bodyPart ? `，部位：${movementDetail.bodyPart}` : '';
+                    const mainMuscle = movementDetail?.mainMuscle ? `，主肌群：${movementDetail.mainMuscle}` : '';
+                    return `  ${movementIndex + 1}. ${movement.name}：${movement.sets || 0} 組 x ${movement.targetReps || 0} 下${equipmentSource}${bodyPart}${mainMuscle}`;
+                }).join('\n')
+                : '  - 尚未加入動作';
+
+            const targetBodyPart = item.plan.targetBodyPart || '未設定';
+            return `${item.label}：${item.plan.name}（想訓練部位：${targetBodyPart}，約 ${planTotalSets} 組）\n${movementsText}`;
+        }).join('\n\n');
+
+        return `請用繁體中文，以健身教練角度評估我的 7 天分化訓練安排。\n\n我的規劃目標：想確認這樣的分化訓練是否合理，是否有需要調整的地方。\n單次菜單預設組間休息：每組 1 分半\n\n各天設定的目標訓練部位：\n${targetBodyPartScheduleText}\n\n七天安排：\n${weeklyScheduleText}\n\n本週初估總量：\n- 有安排訓練日：${trainingDays} 天\n- 休息日：${restDays} 天\n- 未安排：${emptyDays} 天\n- 全週總組數：約 ${weeklyTotalSets} 組\n\n依照動作資料初估的部位組數：\n${bodyPartVolumeText}\n\n請幫我評估：\n1. 這 7 天的分化訓練是否合理？有沒有同一肌群恢復時間太短的問題？\n2. 我每一天設定的「想訓練部位」和實際動作內容是否一致？有沒有名義上練胸、但實際肩或三頭量過多之類的問題？\n3. 訓練日與休息日的安排是否需要調整？請直接給我一版建議的 7 天排序。\n4. 哪些部位的每週訓練量可能太多、太少或剛好？請用表格列出。\n5. 如果我的目標是增肌與穩定進步，這樣的分化比較像推拉腿、上下肢、全身，還是混合型？是否適合我繼續使用？\n6. 是否有建議新增、刪除或合併的菜單日？\n7. 如果我不照你的建議，依然使用目前這 7 天安排，滿分 100 分，不及格 60 分，可直接執行為 80 分，你認為幾分？請說明原因。\n\n請最後用表格整理：原本安排、問題、建議調整、調整理由。`;
+    }, [weeklyPlanSelections, plansDB, movementDB, WEEKLY_REST_DAY_VALUE]);
+
+    const handleCopyWeeklySplitPrompt = async () => {
+        if (!hasWeeklyTrainingSelection) {
+            alert('請至少選擇一天訓練菜單，再複製七天分化評估提示詞。');
+            return;
+        }
+
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(weeklySplitPrompt);
+            } else {
+                const textArea = document.createElement('textarea');
+                textArea.value = weeklySplitPrompt;
+                textArea.style.position = 'fixed';
+                textArea.style.opacity = '0';
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+            }
+            alert('七天分化評估提示詞已複製！請貼上至 ChatGPT。');
+        } catch (error) {
+            console.error('Copy weekly split prompt failed:', error);
+            alert('複製失敗，請手動選取下方文字複製。');
+        }
+    };
+
     if (isCreating || editingPlanId) {
         return (
             <div className="space-y-4">
-                <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-md"><input type="text" value={planName} onChange={(e) => setPlanName(e.target.value)} className="text-xl font-bold w-2/3 p-2 border-b-2 outline-none" placeholder="菜單名稱" /><div className="flex space-x-2"><button onClick={() => {setEditingPlanId(null); setIsCreating(false);}} className="p-2 bg-gray-200 rounded-full"><X className="w-5 h-5"/></button><button onClick={handleSave} className="p-2 bg-indigo-600 text-white rounded-full"><Save className="w-5 h-5"/></button></div></div>
+                <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-md"><input type="text" value={planName} onChange={(e) => setPlanName(e.target.value)} className="text-xl font-bold w-2/3 p-2 border-b-2 outline-none" placeholder="菜單名稱" /><div className="flex space-x-2"><button onClick={() => {setEditingPlanId(null); setIsCreating(false); setPlanName(''); setPlanMovements([]); setAiEvalBodyPart('');}} className="p-2 bg-gray-200 rounded-full"><X className="w-5 h-5"/></button><button onClick={handleSave} className="p-2 bg-indigo-600 text-white rounded-full"><Save className="w-5 h-5"/></button></div></div>
                 <div className="space-y-3">
                     {planMovements.map((m, i) => (
                         <div 
@@ -1628,7 +1914,7 @@ ${moveList}
                             {bodyParts.map(bp => <option key={bp} value={bp}>{bp}</option>)}
                         </select>
                     </div>
-                    <select value={tempSelectedMove} onChange={(e)=>{addMovementToPlan(e.target.value); setTempSelectedMove('');}} className="w-full p-2 border rounded-lg"><option value="" disabled>-- 選擇動作 --</option>{filteredMovementsForMenu.map(m=><option key={m.id} value={m.name}>{m.name}{m.mainMuscle ? ` [${m.mainMuscle}]` : ''}{m.secondaryMuscle ? ` (+${m.secondaryMuscle})` : ''}</option>)}</select>
+                    <select value={tempSelectedMove} onChange={(e)=>{addMovementToPlan(e.target.value); setTempSelectedMove('');}} className="w-full p-2 border rounded-lg"><option value="" disabled>-- 選擇動作 --</option>{filteredMovementsForMenu.map(m=><option key={m.id} value={m.name}>{m.name}｜來源：{getMovementEquipmentSource(m)}{m.mainMuscle ? ` [${m.mainMuscle}]` : ''}{m.secondaryMuscle ? ` (+${m.secondaryMuscle})` : ''}</option>)}</select>
                 </div>
 
                 <div className="bg-indigo-50 p-4 rounded-xl shadow-md border border-indigo-100">
@@ -1670,7 +1956,7 @@ ${moveList}
     return (
         <div className="space-y-4">
             <div className="flex gap-2">
-                <button onClick={() => setIsCreating(true)} className="flex-1 bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>創建菜單</button>
+                <button onClick={() => { setEditingPlanId(null); setPlanName(''); setPlanMovements([]); setAiEvalBodyPart(''); setIsCreating(true); }} className="flex-1 bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center"><Plus className="w-5 h-5 mr-2"/>創建菜單</button>
                 <button onClick={() => setIsBatchMode(!isBatchMode)} className={`px-4 rounded-xl font-bold border ${isBatchMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-600'}`}>{isBatchMode ? '完成' : '管理'}</button>
             </div>
 
@@ -1689,6 +1975,7 @@ ${moveList}
                              {isBatchMode && (selectedItems.has(p.id) ? <CheckSquare className="w-5 h-5 text-indigo-600 mr-3 shrink-0"/> : <Square className="w-5 h-5 text-gray-300 mr-3 shrink-0"/>)}
                             <div>
                                 <h3 className="text-xl font-bold">{p.name}</h3>
+                                {p.targetBodyPart && <div className="text-xs text-gray-500 mt-0.5">想練：{p.targetBodyPart}</div>}
                                 {!isBatchMode && (selectedDailyPlanId===p.id?<span className="text-xs bg-indigo-600 text-white px-2 py-0.5 rounded-full">今日使用</span>:
                                 <button onClick={(e)=>{ e.stopPropagation(); handleUsePlan(p); }} className="text-sm text-indigo-500">選為今日</button>)}
                             </div>
@@ -1698,6 +1985,66 @@ ${moveList}
                     <p className="text-sm text-gray-600 mt-2 border-t pt-2 pl-8">{p.movements?.slice(0,3).map(m=>m.name).join('、')}...</p>
                 </div>
             ))}
+
+            <div className="bg-indigo-50 p-4 rounded-xl shadow-md border border-indigo-100">
+                <div className="flex items-center justify-between mb-3 gap-2">
+                    <div>
+                        <h4 className="font-bold text-indigo-900 flex items-center">
+                            <Sparkles className="w-4 h-4 mr-1" /> AI 七天分化評估提示詞
+                        </h4>
+                        <p className="text-xs text-gray-500 mt-1">選好 7 天安排後，複製到 ChatGPT 評估分化是否合理。</p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => setWeeklyPlanSelections(Array(7).fill(''))}
+                            className="px-3 py-2 rounded-lg text-xs font-bold bg-white text-gray-500 border border-gray-200 hover:bg-gray-50"
+                        >
+                            清空
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleCopyWeeklySplitPrompt}
+                            disabled={!hasWeeklyTrainingSelection}
+                            className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center ${!hasWeeklyTrainingSelection ? 'bg-gray-200 text-gray-400' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                        >
+                            <Copy className="w-3 h-3 mr-1" /> 複製
+                        </button>
+                    </div>
+                </div>
+
+                <div className="space-y-2 mb-3">
+                    {Array.from({ length: 7 }, (_, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                            <label className="w-14 text-sm font-bold text-gray-700 shrink-0">第 {index + 1} 天</label>
+                            <select
+                                value={weeklyPlanSelections[index]}
+                                onChange={(e) => handleWeeklyPlanChange(index, e.target.value)}
+                                className="flex-1 p-2 border rounded-lg bg-white text-sm"
+                            >
+                                <option value="">未安排</option>
+                                <option value={WEEKLY_REST_DAY_VALUE}>休息日</option>
+                                {plansDB.map(plan => (
+                                    <option key={plan.id} value={plan.id}>{plan.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    ))}
+                </div>
+
+                {plansDB.length === 0 && (
+                    <p className="text-xs text-red-500 mb-3">目前還沒有任何菜單。請先建立菜單，再安排七天分化。</p>
+                )}
+
+                <textarea
+                    readOnly
+                    value={weeklySplitPrompt}
+                    className="w-full h-64 p-3 border rounded-lg bg-white text-xs text-gray-700 leading-relaxed"
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                    這個區塊只產生提示詞，不會改動 Firebase，也不會影響你的正式菜單資料。
+                </p>
+            </div>
         </div>
     );
 };

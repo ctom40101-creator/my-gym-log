@@ -1,10 +1,13 @@
-// V1.0
+// V1.1
 // MovementEditor.jsx
 // 動作新增 / 編輯 Modal
 
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Sparkles, Copy, Loader2 } from 'lucide-react';
 import ModalContainer from './ModalContainer';
+
+const DEFAULT_EQUIPMENT_SOURCE = '健身房通用';
+const CUSTOM_EQUIPMENT_SOURCE_VALUE = '__CUSTOM_EQUIPMENT_SOURCE__';
 
 function MovementEditor({
   isOpen,
@@ -13,12 +16,40 @@ function MovementEditor({
   data,
   onChange,
   isProcessing,
+  equipmentSourceOptions = [],
 }) {
   const types = ['推', '拉', '腿', '核心'];
   const bodyParts = ['胸', '背', '腿', '肩', '手臂', '核心', '全身'];
+  const [isAddingEquipmentSource, setIsAddingEquipmentSource] = useState(false);
+
+  const normalizedEquipmentSourceOptions = useMemo(() => {
+    const options = [DEFAULT_EQUIPMENT_SOURCE, ...equipmentSourceOptions]
+      .map((source) => String(source || '').trim())
+      .filter(Boolean);
+
+    return Array.from(new Set(options)).sort((a, b) => {
+      if (a === DEFAULT_EQUIPMENT_SOURCE) return -1;
+      if (b === DEFAULT_EQUIPMENT_SOURCE) return 1;
+      return a.localeCompare(b, 'zh-Hant');
+    });
+  }, [equipmentSourceOptions]);
+
+  const currentEquipmentSource = data.equipmentSource || DEFAULT_EQUIPMENT_SOURCE;
+  const isUnknownExistingSource =
+    Boolean(data.equipmentSource) &&
+    !normalizedEquipmentSourceOptions.includes(data.equipmentSource);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setIsAddingEquipmentSource(isUnknownExistingSource);
+  }, [isOpen, data.id, data.equipmentSource, isUnknownExistingSource]);
+
+  const equipmentSourceSelectValue = isAddingEquipmentSource
+    ? CUSTOM_EQUIPMENT_SOURCE_VALUE
+    : currentEquipmentSource;
 
   const aiPrompt = data.name
-    ? `${data.name}條列式告訴我：1.確認英文名稱為何或是否正確、2.如果動作類型有推、拉、腿、核心，這個動作會是哪一種、3.如果訓練部位有胸、背、腿、肩、核心、手臂、全身，這個動作會是哪種、4.主要肌群以不加英文單純敘述的方式告訴我是哪裡、5.協同肌群也是、6.最後我想知道這個動作的提示與要點，但這部分就以不分段不條列的方式敘述即可`
+    ? `${data.name}這個動作的器材來源是「${currentEquipmentSource}」。條列式告訴我：1.確認英文名稱為何或是否正確、2.如果動作類型有推、拉、腿、核心，這個動作會是哪一種、3.如果訓練部位有胸、背、腿、肩、核心、手臂、全身，這個動作會是哪種、4.主要肌群以不加英文單純敘述的方式告訴我是哪裡、5.協同肌群也是、6.最後我想知道這個動作的提示與要點，但這部分就以不分段不條列的方式敘述即可`
     : '';
 
   const handleCopyPrompt = () => {
@@ -66,7 +97,7 @@ function MovementEditor({
 
             <input
               type="text"
-              value={data.name}
+              value={data.name || ''}
               onChange={(e) => onChange('name', e.target.value)}
               className="w-full p-3 border border-gray-300 rounded-lg focus:border-indigo-500 font-medium"
               placeholder="例如：寬握槓片划船"
@@ -74,7 +105,7 @@ function MovementEditor({
 
             {data.id && data.id !== data.name && (
               <p className="text-xs text-orange-500 mt-1 font-bold">
-                ⚠️ 修改名稱將會同步更新所有歷史紀錄與菜單，需花費一點時間。
+                ⚠️ 修改名稱或器材來源可能會建立新版本，或同步更新所有歷史紀錄與菜單。
               </p>
             )}
           </div>
@@ -127,6 +158,47 @@ function MovementEditor({
             </div>
           </div>
 
+          <div className="bg-teal-50 p-3 rounded-xl border border-teal-100">
+            <label className="block text-xs font-bold text-teal-700 mb-1">
+              器材來源 / 健身房 <span className="text-red-500">*</span>
+            </label>
+
+            <select
+              value={equipmentSourceSelectValue}
+              onChange={(e) => {
+                if (e.target.value === CUSTOM_EQUIPMENT_SOURCE_VALUE) {
+                  setIsAddingEquipmentSource(true);
+                  onChange('equipmentSource', '');
+                } else {
+                  setIsAddingEquipmentSource(false);
+                  onChange('equipmentSource', e.target.value);
+                }
+              }}
+              className="w-full p-2.5 border border-teal-200 rounded-lg bg-white"
+            >
+              {normalizedEquipmentSourceOptions.map((source) => (
+                <option key={source} value={source}>
+                  {source}
+                </option>
+              ))}
+              <option value={CUSTOM_EQUIPMENT_SOURCE_VALUE}>＋ 新增器材來源</option>
+            </select>
+
+            {isAddingEquipmentSource && (
+              <input
+                type="text"
+                value={data.equipmentSource || ''}
+                onChange={(e) => onChange('equipmentSource', e.target.value)}
+                className="w-full mt-2 p-2.5 border border-teal-200 rounded-lg bg-white"
+                placeholder="例如：成吉思汗、WG、公司健身房"
+              />
+            )}
+
+            <p className="text-xs text-teal-700 mt-2 leading-relaxed">
+              這個欄位用來區分同一個動作在不同健身房或不同器材上的版本，避免重訓時選錯。
+            </p>
+          </div>
+
           <div>
             <label className="block text-xs font-bold text-gray-500 mb-1">
               主要肌群 (細項)
@@ -134,7 +206,7 @@ function MovementEditor({
 
             <input
               type="text"
-              value={data.mainMuscle}
+              value={data.mainMuscle || ''}
               onChange={(e) => onChange('mainMuscle', e.target.value)}
               className="w-full p-2.5 border border-gray-300 rounded-lg"
               placeholder="例如：背闊肌上部"
@@ -148,7 +220,7 @@ function MovementEditor({
 
             <input
               type="text"
-              value={data.secondaryMuscle}
+              value={data.secondaryMuscle || ''}
               onChange={(e) => onChange('secondaryMuscle', e.target.value)}
               className="w-full p-2.5 border border-gray-300 rounded-lg"
               placeholder="例如：斜方肌"
@@ -162,7 +234,7 @@ function MovementEditor({
 
             <input
               type="number"
-              value={data.initialWeight}
+              value={data.initialWeight || 0}
               onChange={(e) => onChange('initialWeight', e.target.value)}
               className="w-full p-2 border border-gray-300 rounded-lg"
               min="0"
@@ -175,7 +247,7 @@ function MovementEditor({
             </label>
 
             <textarea
-              value={data.tips}
+              value={data.tips || ''}
               onChange={(e) => onChange('tips', e.target.value)}
               rows="3"
               className="w-full p-2 border border-gray-300 rounded-lg"
@@ -190,7 +262,7 @@ function MovementEditor({
 
             <input
               type="url"
-              value={data.link}
+              value={data.link || ''}
               onChange={(e) => onChange('link', e.target.value)}
               className="w-full p-2 border border-gray-300 rounded-lg"
               placeholder="YouTube URL"
