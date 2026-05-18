@@ -1412,6 +1412,7 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
     const [planName, setPlanName] = useState('');
     const [planMovements, setPlanMovements] = useState([]);
     const [tempSelectedMove, setTempSelectedMove] = useState('');
+    const [aiEvalBodyPart, setAiEvalBodyPart] = useState('');
     
     // MenuScreen: Batch Mode & Filter
     const [isBatchMode, setIsBatchMode] = useState(false);
@@ -1521,6 +1522,70 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
         ? movementDB.filter(m => m.bodyPart === filterBodyPart)
         : movementDB;
 
+    // MenuScreen: AI 總結與評估提示詞
+    const aiSummaryPrompt = useMemo(() => {
+        const moveList = planMovements.length > 0
+            ? planMovements.map((m, index) => {
+                const movementDetail = movementDB.find(dbMove => dbMove.name === m.name);
+                const mainMuscle = movementDetail?.mainMuscle ? `，主肌群：${movementDetail.mainMuscle}` : '';
+                const secondaryMuscle = movementDetail?.secondaryMuscle ? `，協同肌群：${movementDetail.secondaryMuscle}` : '';
+                return `${index + 1}. ${m.name}：${m.sets || 0} 組 x ${m.targetReps || 0} 下${mainMuscle}${secondaryMuscle}`;
+            }).join('\n')
+            : '尚未加入動作';
+
+        const totalSets = planMovements.reduce((sum, m) => sum + (Number(m.sets) || 0), 0);
+        const totalReps = planMovements.reduce((sum, m) => sum + ((Number(m.sets) || 0) * (Number(m.targetReps) || 0)), 0);
+
+        return `請用繁體中文，以健身教練角度評估我的訓練菜單。
+
+菜單名稱：${planName || '未命名菜單'}
+我要練的部位是「${aiEvalBodyPart || '______'}」
+組間休息時間：每組 1 分半
+
+此菜單內容為：
+${moveList}
+
+目前總訓練量：
+- 總組數：約 ${totalSets} 組
+- 目標總下數：約 ${totalReps} 下
+
+請幫我評估：
+1. 整體目標肌群是否過於重複？有沒有建議刪掉的動作？
+2. 目前動作順序是否需要調整？請給我建議順序。
+3. 這份菜單有沒有不足、建議補上的部位或動作？
+4. 總訓練量的組數與下數是否需要調整？請分別列出「我的版本」與「你建議的版本」。
+5. 如果我不照你的建議，依然使用我的菜單與對應組數、下數，滿分 100 分，不及格 60 分，可直接操課使用為 80 分，你認為這份菜單幾分？請說明原因。
+
+請最後用表格整理：保留、刪除、調整順序、補強建議。`;
+    }, [planName, planMovements, aiEvalBodyPart, movementDB]);
+
+    const handleCopyAiPrompt = async () => {
+        if (planMovements.length === 0) {
+            alert('請先加入至少一個動作，再複製評估提示詞。');
+            return;
+        }
+
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(aiSummaryPrompt);
+            } else {
+                const textArea = document.createElement('textarea');
+                textArea.value = aiSummaryPrompt;
+                textArea.style.position = 'fixed';
+                textArea.style.opacity = '0';
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+            }
+            alert('評估提示詞已複製！請貼上至 ChatGPT。');
+        } catch (error) {
+            console.error('Copy AI prompt failed:', error);
+            alert('複製失敗，請手動選取下方文字複製。');
+        }
+    };
+
     if (isCreating || editingPlanId) {
         return (
             <div className="space-y-4">
@@ -1565,6 +1630,40 @@ const MenuScreen = ({ setSelectedDailyPlanId, selectedDailyPlanId, plansDB, move
                     </div>
                     <select value={tempSelectedMove} onChange={(e)=>{addMovementToPlan(e.target.value); setTempSelectedMove('');}} className="w-full p-2 border rounded-lg"><option value="" disabled>-- 選擇動作 --</option>{filteredMovementsForMenu.map(m=><option key={m.id} value={m.name}>{m.name}{m.mainMuscle ? ` [${m.mainMuscle}]` : ''}{m.secondaryMuscle ? ` (+${m.secondaryMuscle})` : ''}</option>)}</select>
                 </div>
+
+                <div className="bg-indigo-50 p-4 rounded-xl shadow-md border border-indigo-100">
+                    <div className="flex items-center justify-between mb-3 gap-2">
+                        <h4 className="font-bold text-indigo-900 flex items-center">
+                            <Sparkles className="w-4 h-4 mr-1" /> AI 菜單評估提示詞
+                        </h4>
+                        <button
+                            type="button"
+                            onClick={handleCopyAiPrompt}
+                            disabled={planMovements.length === 0}
+                            className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center ${planMovements.length === 0 ? 'bg-gray-200 text-gray-400' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                        >
+                            <Copy className="w-3 h-3 mr-1" /> 複製
+                        </button>
+                    </div>
+
+                    <label className="block text-xs font-bold text-gray-600 mb-1">我要練的部位</label>
+                    <input
+                        type="text"
+                        value={aiEvalBodyPart}
+                        onChange={(e) => setAiEvalBodyPart(e.target.value)}
+                        className="w-full p-2 border rounded-lg bg-white text-sm mb-3"
+                        placeholder="例如：胸、背、腿、推日、全身"
+                    />
+
+                    <textarea
+                        readOnly
+                        value={aiSummaryPrompt}
+                        className="w-full h-52 p-3 border rounded-lg bg-white text-xs text-gray-700 leading-relaxed"
+                    />
+                    <p className="text-xs text-gray-500 mt-2">
+                        上方內容會依照目前菜單即時更新。按「複製」後，直接貼到 ChatGPT 評估。
+                    </p>
+                </div>
             </div>
         );
     }
