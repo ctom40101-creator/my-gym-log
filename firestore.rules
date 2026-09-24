@@ -11,7 +11,20 @@ service cloud.firestore {
 
     function isAdmin() {
       return signedInWithGoogle()
-        && request.auth.token.email == 'ctom40101@gmail.com';
+        && request.auth.token.email == 'ctom40101@gmail.com'
+        && exists(/databases/$(database)/documents/SecurityConfig/owner)
+        && get(/databases/$(database)/documents/SecurityConfig/owner).data.uid == request.auth.uid;
+    }
+
+    match /SecurityConfig/owner {
+      allow get: if isAdmin();
+    }
+
+    // Only a privileged operator can issue this after a complete data inventory.
+    // The Worker reads it with the caller's Firebase ID token, not its service account.
+    match /DeletionClearances/{uid} {
+      allow get: if isAdmin() || (signedInWithGoogle() && request.auth.uid == uid);
+      allow delete: if isAdmin() && !existsAfter(/databases/$(database)/documents/AccessRequests/$(uid));
     }
 
     function approved(uid) {
@@ -37,6 +50,7 @@ service cloud.firestore {
         && request.resource.data.status == 'pending'
         && request.resource.data.requestedAt == request.time;
       allow update: if isAdmin()
+        && !resource.data.keys().hasAny(['deletionStartedAt', 'selfDeleteRequestedAt'])
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.email == resource.data.email
         && request.resource.data.displayName == resource.data.displayName
@@ -44,7 +58,16 @@ service cloud.firestore {
         && request.resource.data.status in ['pending', 'approved', 'rejected', 'disabled']
         && request.resource.data.decidedBy == request.auth.uid
         && request.resource.data.decidedAt == request.time
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt', 'decidedBy']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt', 'decidedBy', 'deletionStartedAt'])
+        && (!request.resource.data.keys().hasAny(['deletionStartedAt'])
+          || (request.resource.data.status == 'disabled' && request.resource.data.deletionStartedAt == request.time));
+      allow update: if signedInWithGoogle()
+        && request.auth.uid == uid
+        && request.auth.token.email == resource.data.email
+        && resource.data.status == 'approved'
+        && request.resource.data.status == 'disabled'
+        && request.resource.data.selfDeleteRequestedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'selfDeleteRequestedAt']);
       allow delete: if isAdmin() && resource.data.status == 'disabled';
     }
 
@@ -66,6 +89,7 @@ service cloud.firestore {
         && request.resource.data.email == request.auth.token.email;
       allow update: if appId == 'mygymlog-604bc'
         && canAccessUser(uid)
+        && (approved(uid) || (isAdmin() && request.auth.uid == uid))
         && identityIsValid()
         && resource.data.uid == uid
         && request.resource.data.uid == resource.data.uid
@@ -74,8 +98,19 @@ service cloud.firestore {
       allow delete: if appId == 'mygymlog-604bc' && canAccessUser(uid);
     }
 
-    match /artifacts/{appId}/users/{userId}/{document=**} {
-      allow read, write: if appId == 'mygymlog-604bc' && canAccessUser(userId);
+    match /artifacts/{appId}/users/{userId} {
+      allow get: if appId == 'mygymlog-604bc' && canAccessUser(userId);
+      allow delete: if appId == 'mygymlog-604bc' && canAccessUser(userId);
+    }
+
+    match /artifacts/{appId}/users/{userId}/{collectionName}/{documentId} {
+      function knownCollection() {
+        return collectionName in ['BodyMetricsDB', 'LogDB', 'MovementDB', 'PlansDB', 'Settings'];
+      }
+      allow read: if appId == 'mygymlog-604bc' && knownCollection() && canAccessUser(userId);
+      allow create, update: if appId == 'mygymlog-604bc' && knownCollection()
+        && canAccessUser(userId) && (approved(userId) || (isAdmin() && request.auth.uid == userId));
+      allow delete: if appId == 'mygymlog-604bc' && knownCollection() && canAccessUser(userId);
     }
   }
 }

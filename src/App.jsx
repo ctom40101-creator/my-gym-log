@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { auth, db } from './firebase';
-import { onAuthStateChanged, deleteUser } from 'firebase/auth';
-import { doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch, updateDoc, serverTimestamp } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
   Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw, GripVertical, Camera, Image as ImageIcon, ChevronUp, Grid
@@ -9,7 +9,11 @@ import {
 import LoadingSpinner from './components/LoadingSpinner';
 import EmptyState from './components/EmptyState';
 import { logoutUser, reauthenticateWithGoogle } from './services/authService';
-import { decideAccess, observeAccessRequest } from './services/accessService';
+import { decideAccess, loadOriginalOwnerUid, observeAccessRequest } from './services/accessService';
+import { dataViewMode } from './services/dataViewMode';
+import { clearDraft, loadDraft, saveDraft, visibleDraft } from './services/draftStorage';
+import { stagedSelfDelete } from './services/accountDeletion';
+import { hasAdminWorker } from './services/adminWorker';
 import AuthScreen from './components/AuthScreen';
 import AccessStatusScreen from './components/AccessStatusScreen';
 import AdminScreen from './components/AdminScreen';
@@ -120,7 +124,7 @@ const makeEditableMovement = (movement) => ({
 // ----------------------------------------------------
 // ProfileScreen
 // ----------------------------------------------------
-const ProfileScreen = ({ bodyMetricsDB, userId, db, APP_ID, logDB, auth, isAdmin }) => {
+const ProfileScreen = ({ bodyMetricsDB, userId, db, APP_ID, logDB, auth, isAdmin, onDeletionStaged }) => {
     const [weight, setWeight] = useState('');
     const [bodyFat, setBodyFat] = useState('');
     const today = new Date().toISOString().substring(0, 10);
@@ -139,21 +143,23 @@ const ProfileScreen = ({ bodyMetricsDB, userId, db, APP_ID, logDB, auth, isAdmin
 
     const handleDeleteAccount = async () => {
         if (!user || user.uid !== userId || isAdmin) return;
-        if (!confirm('這會永久刪除帳號與訓練紀錄。確定繼續嗎？')) return;
+        if (!hasAdminWorker()) { alert('管理 Worker 尚未設定；帳號刪除暫停。'); return; }
+        if (!confirm('這會立即停用帳號與資料存取。管理員將清除資料並完成完整盤點後，才能永久刪除 Auth。確定繼續嗎？')) return;
         setIsLoading(true);
         try {
-            await reauthenticateWithGoogle(user);
-            for (const name of ['LogDB', 'BodyMetricsDB', 'MovementDB', 'PlansDB', 'Settings']) {
-                const path = 'artifacts/' + APP_ID + '/users/' + user.uid + '/' + name;
-                const snapshot = await getDocs(collection(db, path));
-                for (const entry of snapshot.docs) await deleteDoc(entry.ref);
-            }
-            await deleteDoc(doc(db, 'artifacts/' + APP_ID + '/public/data/UserIndex', user.uid));
-            await deleteUser(user);
-            alert('帳號已刪除。使用申請記錄將由管理員清理。');
+            await stagedSelfDelete({
+                reauthenticate: () => reauthenticateWithGoogle(user),
+                revokeAccess: async () => {
+                    await updateDoc(doc(db, 'AccessRequests', user.uid), {
+                        status: 'disabled', selfDeleteRequestedAt: serverTimestamp(),
+                    });
+                    onDeletionStaged(user.uid);
+                },
+            });
+            alert('帳號與資料存取已停用。請等待管理員清理資料並完成盤點，再於停用頁面完成 Auth 刪除。');
         } catch (error) {
             if (error?.code !== 'auth/popup-closed-by-user') {
-                alert('刪除未完成；請聯絡管理員確認剩餘資料與帳號狀態。');
+                alert('刪除未完成；權限可能已停用。請聯絡管理員確認剩餘資料與帳號狀態。');
             }
         } finally { setIsLoading(false); }
     };
@@ -1581,6 +1587,21 @@ const AnalysisScreen = ({ logDB, movementDB, db, APP_ID, userId }) => {
     );
 };
 
+const AdminReadOnlyViewer = ({ user, movementDB, plansDB, logDB, bodyMetricsDB }) => (
+    <ScreenContainer title="管理員唯讀檢視">
+        <p className="text-sm text-gray-600 mb-4">{user?.nickname || user?.email || user?.id} 的資料只供檢視。切換使用者後會等待該使用者的資料載入完成。</p>
+        {[
+            ['動作', movementDB], ['菜單', plansDB], ['訓練紀錄', logDB], ['身體數據', bodyMetricsDB],
+        ].map(([label, entries]) => <section key={label} className="bg-white rounded-xl p-4 mb-4">
+            <h2 className="font-bold">{label}：{entries.length} 筆</h2>
+            {entries.map(entry => <details key={entry.id} className="border-t py-2">
+                <summary className="cursor-pointer break-all">{entry.name || entry.date || entry.id}</summary>
+                <pre className="text-xs whitespace-pre-wrap break-all">{JSON.stringify(entry, null, 2)}</pre>
+            </details>)}
+        </section>)}
+    </ScreenContainer>
+);
+
 const App = () => {
     const [screen, setScreen] = useState('Profile');
     const [userId, setUserId] = useState(null);
@@ -1588,6 +1609,7 @@ const App = () => {
     const [currentUser, setCurrentUser] = useState(null);
     const [adminViewUser, setAdminViewUser] = useState(null);
     const [accessState, setAccessState] = useState('loading');
+    const [selfDeleteRequested, setSelfDeleteRequested] = useState(false);
     const [claims, setClaims] = useState(null);
     const isAdmin = accessState === 'admin';
     const effectiveUserId = isAdmin && adminViewUser?.id ? adminViewUser.id : userId;
@@ -1597,22 +1619,34 @@ const App = () => {
     const [plansDB, setPlansDB] = useState([]);
     const [logDB, setLogDB] = useState([]);
     const [bodyMetricsDB, setBodyMetricsDB] = useState([]);
-    const [weightHistory, setWeightHistory] = useState({});
+    const [loadedUserId, setLoadedUserId] = useState(null);
+    const [dataLoadErrorUid, setDataLoadErrorUid] = useState(null);
 
     // 初始化為空字串，防止自動選取
     const [selectedDailyPlanId, setSelectedDailyPlanId] = useState('');
 
-    // State Persistence (Draft)
-    const [currentLog, setCurrentLog] = useState(() => {
-        try {
-            const saved = localStorage.getItem('gym_log_draft');
-            return saved ? JSON.parse(saved) : [];
-        } catch { return []; }
-    });
+    // Firebase UID owns the browser draft; a legacy unscoped draft has no proven owner.
+    const [draftState, setDraftState] = useState({ uid: null, log: [] });
+    const currentLog = visibleDraft(draftState, userId);
+    const setCurrentLog = (next) => {
+        if (!userId) return;
+        setDraftState(previous => ({
+            uid: userId,
+            log: typeof next === 'function' ? next(visibleDraft(previous, userId)) : next,
+        }));
+    };
 
     useEffect(() => {
-        localStorage.setItem('gym_log_draft', JSON.stringify(currentLog));
-    }, [currentLog]);
+        if (draftState.uid && ['approved', 'admin'].includes(accessState)) {
+            saveDraft(localStorage, draftState.uid, draftState.log);
+        }
+    }, [draftState, accessState]);
+
+    const onDeletionStaged = (uid) => {
+        clearDraft(localStorage, uid);
+        setDraftState({ uid: null, log: [] });
+        setSelectedDailyPlanId('');
+    };
 
     // 移除自動設定第一個菜單的 useEffect
 
@@ -1628,24 +1662,41 @@ const App = () => {
             setClaims(null);
             setAdminViewUser(null);
             setAccessState(u ? 'loading' : 'unauthenticated');
+            setSelfDeleteRequested(false);
             setIsAuthReady(true);
             setMovementDB([]);
             setPlansDB([]);
             setLogDB([]);
             setBodyMetricsDB([]);
+            setDraftState({ uid: u?.uid || null, log: loadDraft(localStorage, u?.uid) });
+            setSelectedDailyPlanId('');
+            setLoadedUserId(null);
+            setDataLoadErrorUid(null);
             if (!u) return;
             try {
                 const token = await u.getIdTokenResult();
                 if (!active || auth.currentUser?.uid !== u.uid) return;
                 const nextClaims = token.claims;
                 setClaims(nextClaims);
-                const first = decideAccess(u, nextClaims, null);
+                const ownerCandidate = nextClaims.email === 'ctom40101@gmail.com'
+                    && nextClaims.email_verified === true
+                    && nextClaims.firebase?.sign_in_provider === 'google.com';
+                const originalOwnerUid = ownerCandidate ? await loadOriginalOwnerUid(db) : null;
+                if (!active || auth.currentUser?.uid !== u.uid) return;
+                if (ownerCandidate && originalOwnerUid !== u.uid) {
+                    setAccessState('identity_invalid');
+                    return;
+                }
+                const first = decideAccess(u, nextClaims, null, originalOwnerUid);
                 if (first === 'admin' || first === 'identity_invalid') {
                     setAccessState(first);
                     return;
                 }
                 unsubscribeRequest = observeAccessRequest(db, u,
-                    request => { if (active) setAccessState(decideAccess(u, nextClaims, request)); },
+                    request => { if (active) {
+                        setSelfDeleteRequested(!!request?.selfDeleteRequestedAt);
+                        setAccessState(decideAccess(u, nextClaims, request, originalOwnerUid));
+                    } },
                     () => { if (active) setAccessState('error'); });
                 setScreen('Profile');
             } catch {
@@ -1657,8 +1708,8 @@ const App = () => {
     }, []);
 
     // 計算歷史紀錄與 AI 建議重量 (修正版：實作漸進式負荷邏輯 + 修正重置邏輯)
-    useEffect(() => {
-        if (logDB.length === 0) return;
+    const weightHistory = useMemo(() => {
+        if (logDB.length === 0) return {};
         const historyMap = {};
         movementDB.forEach(move => {
             // 找出該動作的所有紀錄 (包含標準訓練紀錄 AND 重置紀錄)
@@ -1734,19 +1785,28 @@ const App = () => {
                 suggestion: calculatedSuggestion
             };
         });
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setWeightHistory(historyMap);
+        return historyMap;
     }, [logDB, movementDB]);
 
     useEffect(() => {
         if (!isAuthReady || !['approved', 'admin'].includes(accessState) || !effectiveUserId || !db) return;
+        let active = true;
+        const loaded = new Set();
+        const received = (name, setter, snapshot) => {
+            if (!active) return;
+            setter(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+            loaded.add(name);
+            if (loaded.size === 4) setLoadedUserId(effectiveUserId);
+        };
+        const failed = () => { if (active) setDataLoadErrorUid(effectiveUserId); };
         // 修正路徑：讀取 users/{userId}/MovementDB (私有)
-        const unsub1 = onSnapshot(query(collection(db, getMovementDBPath(APP_ID, effectiveUserId))), (s) => setMovementDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsub1 = onSnapshot(query(collection(db, getMovementDBPath(APP_ID, effectiveUserId))), s => received('movement', setMovementDB, s), failed);
         // 修正路徑：讀取 users/{userId}/PlansDB (私有)
-        const unsub2 = onSnapshot(query(collection(db, getPlansDBPath(APP_ID, effectiveUserId))), (s) => setPlansDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsub2 = onSnapshot(query(collection(db, getPlansDBPath(APP_ID, effectiveUserId))), s => received('plans', setPlansDB, s), failed);
 
-        const unsub3 = onSnapshot(query(collection(db, getLogDBPath(APP_ID, effectiveUserId)), orderBy('date', 'desc')), (s) => setLogDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-        const unsub4 = onSnapshot(query(collection(db, getBodyMetricsDBPath(APP_ID, effectiveUserId))), (s) => setBodyMetricsDB(s.docs.map(d => ({ id: d.id, ...d.data() }))));        return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+        const unsub3 = onSnapshot(query(collection(db, getLogDBPath(APP_ID, effectiveUserId)), orderBy('date', 'desc')), s => received('log', setLogDB, s), failed);
+        const unsub4 = onSnapshot(query(collection(db, getBodyMetricsDBPath(APP_ID, effectiveUserId))), s => received('metrics', setBodyMetricsDB, s), failed);
+        return () => { active = false; unsub1(); unsub2(); unsub3(); unsub4(); };
     }, [isAuthReady, accessState, effectiveUserId]);
 
     useEffect(() => {
@@ -1758,16 +1818,19 @@ const App = () => {
 
     if (!isAuthReady) return <div className="p-10 text-center">Loading...</div>;
     if (!currentUser) return <AuthScreen />;
-    if (!['approved', 'admin'].includes(accessState)) return <AccessStatusScreen state={accessState} user={currentUser} claims={claims} db={db} />;
+    if (!['approved', 'admin'].includes(accessState)) return <AccessStatusScreen state={accessState} user={currentUser} claims={claims} db={db} selfDeleteRequested={selfDeleteRequested} />;
+    if (dataLoadErrorUid === effectiveUserId) return <div className="p-10 text-center">無法載入此帳號的資料，請重新整理或聯絡管理員。</div>;
+    if (dataViewMode(effectiveUserId, loadedUserId, userId) === 'loading') return <div className="p-10 text-center">正在載入此帳號的資料…</div>;
 
     const renderScreen = () => {
+        if (isAdmin && adminViewUser) return <AdminReadOnlyViewer user={adminViewUser} movementDB={movementDB} plansDB={plansDB} logDB={logDB} bodyMetricsDB={bodyMetricsDB} />;
         if (screen === 'Admin' && isAdmin) return <ScreenContainer title="🛡️ 管理後台"><AdminScreen db={db} admin={currentUser} setAdminViewUser={setAdminViewUser} /></ScreenContainer>;
 
         switch (screen) {
             case 'Library': return <ScreenContainer title="🏋️ 動作庫"><LibraryScreen weightHistory={weightHistory} movementDB={movementDB} db={db} APP_ID={APP_ID} userId={effectiveUserId} logDB={logDB} plansDB={plansDB} /></ScreenContainer>;
             case 'Menu': return <ScreenContainer title="📋 菜單"><MenuScreen setSelectedDailyPlanId={setSelectedDailyPlanId} selectedDailyPlanId={selectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} db={db} userId={effectiveUserId} APP_ID={APP_ID} setScreen={setScreen} currentLog={currentLog} setCurrentLog={setCurrentLog} /></ScreenContainer>;
             case 'Analysis': return <ScreenContainer title="📈 分析"><AnalysisScreen logDB={logDB} bodyMetricsDB={bodyMetricsDB} movementDB={movementDB} db={db} APP_ID={APP_ID} userId={effectiveUserId} /></ScreenContainer>;
-            case 'Profile': return <ScreenContainer title="👤 個人"><ProfileScreen bodyMetricsDB={bodyMetricsDB} userId={userId} db={db} APP_ID={APP_ID} logDB={logDB} auth={auth} isAdmin={isAdmin} /></ScreenContainer>;
+            case 'Profile': return <ScreenContainer title="👤 個人"><ProfileScreen bodyMetricsDB={bodyMetricsDB} userId={userId} db={db} APP_ID={APP_ID} logDB={logDB} auth={auth} isAdmin={isAdmin} onDeletionStaged={onDeletionStaged} /></ScreenContainer>;
             default: return <ScreenContainer title="✍️ 紀錄"><LogScreen selectedDailyPlanId={selectedDailyPlanId} setSelectedDailyPlanId={setSelectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} weightHistory={weightHistory} db={db} userId={effectiveUserId} APP_ID={APP_ID} setScreen={setScreen} currentLog={currentLog} setCurrentLog={setCurrentLog} /></ScreenContainer>;
         }
     };

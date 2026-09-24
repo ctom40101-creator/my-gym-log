@@ -21,10 +21,12 @@ test('unverified, password and anonymous identities never reach product data', (
   assert.equal(decideAccess(member, { ...googleClaims, email: undefined }, { status: 'approved' }), 'identity_invalid');
 });
 
-test('admin requires verified Firebase token email and bypasses pending request for bootstrap', () => {
+test('admin requires verified Firebase token email and frozen original UID', () => {
   const verified = { ...googleClaims, email: 'ctom40101@gmail.com' };
-  assert.equal(isVerifiedAdmin(verified), true);
-  assert.equal(decideAccess(owner, verified, undefined), 'admin');
-  assert.equal(isVerifiedAdmin({ ...verified, email_verified: false }), false);
-  assert.equal(decideAccess(owner, { ...verified, email_verified: false }, undefined), 'identity_invalid');
+  assert.equal(isVerifiedAdmin(verified, owner.uid, 'owner-uid'), true);
+  assert.equal(decideAccess(owner, verified, undefined, 'owner-uid'), 'admin');
+  assert.equal(isVerifiedAdmin(verified, 'shadow-uid', 'owner-uid'), false);
+  assert.equal(decideAccess({ uid: 'shadow-uid' }, verified, undefined, 'owner-uid'), 'request_needed');
+  assert.equal(isVerifiedAdmin({ ...verified, email_verified: false }, owner.uid, 'owner-uid'), false);
+  assert.equal(decideAccess(owner, { ...verified, email_verified: false }, undefined, 'owner-uid'), 'identity_invalid');
 });

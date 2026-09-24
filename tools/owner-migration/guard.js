@@ -18,3 +18,10 @@ export function verifyAfterLink(user, expectedUid) {
     throw new Error('google_provider_mismatch');
   }
 }
+
+export function verifyGoogleToken(claims, expectedUid) {
+  if (!expectedUid || claims?.sub !== expectedUid || claims.email !== OWNER_EMAIL
+      || claims.email_verified !== true || claims.firebase?.sign_in_provider !== 'google.com') {
+    throw new Error('owner_google_token_mismatch');
+  }
+}

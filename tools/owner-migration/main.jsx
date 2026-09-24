@@ -5,7 +5,7 @@ import {
   setPersistence, signInWithEmailAndPassword, signInWithPopup, signOut,
 } from 'firebase/auth';
 import { auth } from '../../src/firebase';
-import { verifyBeforeLink, verifyAfterLink } from './guard';
+import { verifyBeforeLink, verifyAfterLink, verifyGoogleToken } from './guard';
 
 const OWNER_EMAIL = 'ctom40101@gmail.com';
 const provider = new GoogleAuthProvider();
@@ -50,6 +50,8 @@ export function MigrationPage() {
       await signOut(auth);
       const googleLogin = await signInWithPopup(auth, provider);
       verifyAfterLink(googleLogin.user, expectedUid.trim());
+      const freshToken = await googleLogin.user.getIdTokenResult(true);
+      verifyGoogleToken(freshToken.claims, expectedUid.trim());
       setFinished(true);
       setStatus('Google 登入回讀成功；原 Owner UID 未變。請再於 Firebase 控制台唯讀核對一次，然後登出。');
     } catch (error) {
