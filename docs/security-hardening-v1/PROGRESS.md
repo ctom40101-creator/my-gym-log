@@ -16,3 +16,11 @@
 
 - TDD implementation, integrated validation, candidate freeze, and Final Release Human Gate.
 - Production state must be freshly read back at Final Release Gate; current no-mutation statement records only this task's actions.
+
+## 2026-09-24 — Firestore Rules candidate
+
+- Added an isolated Firestore emulator test harness using a `demo-` project ID; no Production Rules were published.
+- Confirmed red phase against the original permissive rules: 6 of 9 security cases failed. Added a staged request-deletion case and confirmed red at 9 of 10.
+- Hardened `AccessRequests`, `UserIndex`, and private data rules. The latest emulator run passed 10 of 10 cases. Approved status is the normal member authorization source; the verified owner token is the explicit admin bootstrap exception.
+- Emulator on this Windows runtime requires Java 21 and `TEMP`/`TMP`/`java.io.tmpdir` set to `C:\Windows\Temp` because the default temporary directory caused a Java loopback socket error.
+- Next: Worker unit contracts and implementation, then Google-only frontend flow. The Rules candidate remains local to this branch until the Final Release Gate.

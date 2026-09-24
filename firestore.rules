@@ -1,0 +1,81 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedInWithGoogle() {
+      return request.auth != null
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+
+    function isAdmin() {
+      return signedInWithGoogle()
+        && request.auth.token.email == 'ctom40101@gmail.com';
+    }
+
+    function approved(uid) {
+      return signedInWithGoogle()
+        && exists(/databases/$(database)/documents/AccessRequests/$(uid))
+        && get(/databases/$(database)/documents/AccessRequests/$(uid)).data.status == 'approved';
+    }
+
+    function canAccessUser(uid) {
+      return isAdmin() || (request.auth != null && request.auth.uid == uid && approved(uid));
+    }
+
+    match /AccessRequests/{uid} {
+      allow get: if isAdmin() || (signedInWithGoogle() && request.auth.uid == uid);
+      allow list: if isAdmin();
+      allow create: if signedInWithGoogle()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'displayName', 'status', 'requestedAt'])
+        && request.resource.data.keys().hasAll(['uid', 'email', 'displayName', 'status', 'requestedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.displayName is string
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requestedAt == request.time;
+      allow update: if isAdmin()
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.displayName == resource.data.displayName
+        && request.resource.data.requestedAt == resource.data.requestedAt
+        && request.resource.data.status in ['pending', 'approved', 'rejected', 'disabled']
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt', 'decidedBy']);
+      allow delete: if isAdmin() && resource.data.status == 'disabled';
+    }
+
+    match /artifacts/{appId}/public/data/UserIndex/{uid} {
+      function identityIsValid() {
+        return request.resource.data.keys().hasOnly(['uid', 'email', 'isAnonymous', 'nickname', 'lastLogin'])
+          && request.resource.data.keys().hasAll(['uid', 'email', 'isAnonymous'])
+          && request.resource.data.uid == uid
+          && request.resource.data.isAnonymous == false;
+      }
+
+      allow get: if appId == 'mygymlog-604bc' && canAccessUser(uid);
+      allow list: if appId == 'mygymlog-604bc' && isAdmin();
+      allow create: if appId == 'mygymlog-604bc'
+        && request.auth != null
+        && request.auth.uid == uid
+        && approved(uid)
+        && identityIsValid()
+        && request.resource.data.email == request.auth.token.email;
+      allow update: if appId == 'mygymlog-604bc'
+        && canAccessUser(uid)
+        && identityIsValid()
+        && resource.data.uid == uid
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.isAnonymous == resource.data.isAnonymous;
+      allow delete: if appId == 'mygymlog-604bc' && canAccessUser(uid);
+    }
+
+    match /artifacts/{appId}/users/{userId}/{document=**} {
+      allow read, write: if appId == 'mygymlog-604bc' && canAccessUser(userId);
+    }
+  }
+}
