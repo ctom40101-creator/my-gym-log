@@ -31,3 +31,13 @@
 - Worker exchanges its service account assertion for Google OAuth only after verified admin authorization. The service account is a required Cloudflare Secret binding; no value is stored in this repository or provided to the Worker yet.
 - Worker source and Wrangler config are branch artifacts only. No Cloudflare deployment, secret provision, traffic cutover, or Production Auth mutation occurred.
 - Local Worker tests passed 8 of 8 after the initial red phase. Remaining validation includes Wrangler dry run, frontend integration, and full regression checks.
+
+## 2026-09-24 — Google-only client candidate
+
+- Replaced anonymous/email/password UI and service calls with Google sign-in. Provider collisions show a safe-stop message; no automatic account linking or UID migration runs.
+- Added live `AccessRequests/{uid}` observation and explicit request, pending, approved, rejected, disabled, and invalid-identity views. Private data listeners and default-data seeding start only after approval or verified Admin identity.
+- Replaced the legacy admin screen with live request decisions, user data viewing, and staged deletion: disabled request → Worker Auth disable → known private collection cleanup → UserIndex cleanup → Worker Auth delete → request cleanup. The Owner account is excluded from self-delete and admin-delete UI, with a second Owner UID/email guard in Worker.
+- Self-delete requires a fresh Google reauthentication before data cleanup. Its orphaned request record must be cleaned by the admin after Auth deletion because Firebase client Auth and Firestore operations are not atomic.
+- Local browser read-back displayed the Google-only entry screen with no immediate runtime error. No Google sign-in against Production Firebase was attempted.
+- Full `npm run lint` now passes; the baseline had 7,340 errors. Client `npm run build` passes with the inherited large-chunk warning. Latest unit suite passed 15 of 15; Firestore emulator passed 11 of 11; Wrangler dry run packaged without deployment.
+- Known release checks: verify Owner's original UID and provider collision state in Production before any provider migration; verify target collection inventory and Worker/IAM configuration. The client can enumerate only the five known private collections, so unknown private collections require a separate inventory before allowing permanent deletion.

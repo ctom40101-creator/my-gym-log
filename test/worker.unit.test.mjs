@@ -20,13 +20,13 @@ before(async () => {
   });
 });
 
-async function idToken({ uid = 'owner-uid', email = ownerEmail, verified = true, audience = projectId, expiration = '1h' } = {}) {
+async function idToken({ uid = 'owner-uid', email = ownerEmail, verified = true, audience = projectId, expiration = '1h', issuedAt } = {}) {
   return new SignJWT({ email, email_verified: verified, auth_time: Math.floor(Date.now() / 1000) - 30 })
     .setProtectedHeader({ alg: 'RS256', kid: 'test-kid' })
     .setIssuer(`https://securetoken.google.com/${projectId}`)
     .setAudience(audience)
     .setSubject(uid)
-    .setIssuedAt()
+    .setIssuedAt(issuedAt)
     .setExpirationTime(expiration)
     .sign(privateKey);
 }
@@ -69,6 +69,7 @@ test('Firebase verifier checks signature, issuer, audience, expiry and subject',
   assert.equal((await verifyFirebaseToken(token, projectId, { resolveKey: async () => publicKey })).sub, 'owner-uid');
   await assert.rejects(verifyFirebaseToken(await idToken({ audience: 'wrong-project' }), projectId, { resolveKey: async () => publicKey }));
   await assert.rejects(verifyFirebaseToken(await idToken({ expiration: '-1h' }), projectId, { resolveKey: async () => publicKey }));
+  await assert.rejects(verifyFirebaseToken(await idToken({ issuedAt: Math.floor(Date.now() / 1000) + 3600 }), projectId, { resolveKey: async () => publicKey }));
   await assert.rejects(verifyFirebaseToken(token, projectId, { resolveKey: async () => generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey }));
 });
 
@@ -135,6 +136,12 @@ test('target with owner email is protected even when UID differs', async () => {
   const f = fixture({ targetUsers: [{ localId: 'member-uid', email: ownerEmail, disabled: true }] });
   assert.equal((await call(f.worker, f.env, '/admin/users/member-uid/delete', await idToken(), { cleanupComplete: true })).status, 409);
   assert.equal(f.calls.filter(item => item.url.endsWith('/accounts:delete')).length, 0);
+});
+
+test('retry after Auth deletion still permits cleanup of an orphaned disabled request', async () => {
+  const f = fixture({ targetUsers: [] });
+  assert.equal((await call(f.worker, f.env, '/admin/users/member-uid/disable', await idToken())).status, 200);
+  assert.equal((await call(f.worker, f.env, '/admin/users/member-uid/delete', await idToken(), { cleanupComplete: true })).status, 200);
 });
 
 test('upstream errors are bounded and do not reveal credentials', async () => {

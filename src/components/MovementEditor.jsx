@@ -41,6 +41,8 @@ function MovementEditor({
 
   useEffect(() => {
     if (!isOpen) return;
+    // Match the source picker to the movement being edited.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsAddingEquipmentSource(isUnknownExistingSource);
   }, [isOpen, data.id, data.equipmentSource, isUnknownExistingSource]);
 

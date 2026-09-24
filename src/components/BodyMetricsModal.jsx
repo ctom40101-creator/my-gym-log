@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { Activity } from 'lucide-react';
 
+// eslint-disable-next-line no-unused-vars
 function BodyMetricsModal({ isOpen, onClose, onSave, ModalContainer }) {
   const [weight, setWeight] = useState('');
   const [bodyFat, setBodyFat] = useState('');
@@ -12,6 +13,8 @@ function BodyMetricsModal({ isOpen, onClose, onSave, ModalContainer }) {
 
   useEffect(() => {
     if (isOpen) {
+      // Reset the quick entry when the modal opens.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setWeight('');
       setBodyFat('');
     }

@@ -59,6 +59,8 @@ function AddMovementModal({
 
   useEffect(() => {
     if (isOpen) {
+      // Reset the draft when the modal opens.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedMuscle('');
       setSelectedSource('');
       setSelectedMove('');

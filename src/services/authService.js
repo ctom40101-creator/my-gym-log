@@ -1,32 +1,9 @@
-// V1.0
-// authService.js
-// Firebase Auth 服務層
-
-import {
-  signInAnonymously,
-  signOut,
-  signInWithEmailAndPassword,
-  sendPasswordResetEmail,
-} from 'firebase/auth';
-
+import { GoogleAuthProvider, reauthenticateWithPopup, signInWithPopup, signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 
-// 匿名登入
-export const anonymousLogin = async () => {
-  return await signInAnonymously(auth);
-};
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-// Email 登入
-export const loginWithEmail = async (email, password) => {
-  return await signInWithEmailAndPassword(auth, email, password);
-};
-
-// 登出
-export const logoutUser = async () => {
-  return await signOut(auth);
-};
-
-// 重設密碼
-export const resetPassword = async (email) => {
-  return await sendPasswordResetEmail(auth, email);
-};
+export const loginWithGoogle = () => signInWithPopup(auth, googleProvider);
+export const reauthenticateWithGoogle = user => reauthenticateWithPopup(user, googleProvider);
+export const logoutUser = () => signOut(auth);

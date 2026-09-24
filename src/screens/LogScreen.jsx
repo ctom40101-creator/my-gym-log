@@ -8,14 +8,7 @@
 
 import React from 'react';
 
-function LogScreen({
-  logDB,
-  setLogDB,
-  movementDB,
-  bodyMetricsDB,
-  plansDB,
-  user,
-}) {
+function LogScreen() {
 
   return (
     <div>

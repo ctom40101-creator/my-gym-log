@@ -15,6 +15,8 @@ function WeightResetModal({
   const [weight, setWeight] = useState(state.initialWeight);
 
   useEffect(() => {
+    // Reset the editable weight when the selected movement changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWeight(state.initialWeight);
   }, [state.initialWeight]);
 

@@ -140,3 +140,10 @@ test('only verified admin can list UserIndex and other public paths deny access'
   await assertFails(setDoc(ref(c.owner, `${base}/public/data/OtherCollection/doc1`), { x: 1 }));
   await assertFails(getDoc(ref(c.approved, `${base}/public/data/OtherCollection/doc1`)));
 });
+
+test('verified admin can bootstrap own UserIndex without an AccessRequest document', async () => {
+  const c = contexts();
+  await assertSucceeds(setDoc(ref(c.owner, indexPath('owner-uid')), {
+    uid: 'owner-uid', email: 'ctom40101@gmail.com', isAnonymous: false,
+  }));
+});

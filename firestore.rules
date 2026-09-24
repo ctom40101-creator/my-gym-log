@@ -61,7 +61,7 @@ service cloud.firestore {
       allow create: if appId == 'mygymlog-604bc'
         && request.auth != null
         && request.auth.uid == uid
-        && approved(uid)
+        && (approved(uid) || isAdmin())
         && identityIsValid()
         && request.resource.data.email == request.auth.token.email;
       allow update: if appId == 'mygymlog-604bc'

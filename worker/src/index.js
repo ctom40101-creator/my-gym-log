@@ -52,6 +52,7 @@ export async function verifyFirebaseToken(token, projectId, { resolveKey } = {})
   });
   const now = Math.floor(Date.now() / 1000);
   if (typeof payload.sub !== 'string' || !payload.sub || payload.sub.length > 128) throw new Error('Invalid subject');
+  if (typeof payload.iat !== 'number' || payload.iat > now + 60) throw new Error('Invalid issued-at time');
   if (typeof payload.auth_time !== 'number' || payload.auth_time <= 0 || payload.auth_time > now + 60) throw new Error('Invalid auth time');
   return payload;
 }
@@ -150,8 +151,9 @@ export function createWorker({ fetchImpl = fetch, resolveKey } = {}) {
           return response(409, 'owner_identity_ambiguous', origin);
         }
         const lookup = await authApi(fetchImpl, env.FIREBASE_PROJECT_ID, accessToken, 'lookup', { localId: [targetUid] });
-        if (!Array.isArray(lookup.users) || lookup.users.length === 0) {
-          return operation === 'delete' ? response(200, 'already_deleted', origin) : response(404, 'target_not_found', origin);
+        if (!Array.isArray(lookup.users)) return response(502, 'upstream_unavailable', origin);
+        if (lookup.users.length === 0) {
+          return response(200, 'already_deleted', origin);
         }
         const target = singleUser(lookup.users, targetUid);
         if (!target || !target.email || target.email.toLowerCase() === OWNER_EMAIL) return response(409, 'target_identity_ambiguous', origin);
