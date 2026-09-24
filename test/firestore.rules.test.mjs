@@ -147,3 +147,24 @@ test('verified admin can bootstrap own UserIndex without an AccessRequest docume
     uid: 'owner-uid', email: 'ctom40101@gmail.com', isAnonymous: false,
   }));
 });
+
+test('integrated request, approval, data access, and disable transition', async () => {
+  const c = contexts();
+  const request = ref(c.pending, requestPath('pending-uid'));
+  const data = ref(c.pending, privatePath('pending-uid'));
+  await assertSucceeds(setDoc(request, {
+    uid: 'pending-uid', email: 'pending@example.test', displayName: 'Pending',
+    status: 'pending', requestedAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(data, { value: 'before approval' }));
+  await assertSucceeds(updateDoc(ref(c.owner, requestPath('pending-uid')), {
+    status: 'approved', decidedAt: serverTimestamp(), decidedBy: 'owner-uid',
+  }));
+  await assertSucceeds(setDoc(data, { value: 'after approval' }));
+  await assertSucceeds(getDoc(data));
+  await assertSucceeds(updateDoc(ref(c.owner, requestPath('pending-uid')), {
+    status: 'disabled', decidedAt: serverTimestamp(), decidedBy: 'owner-uid',
+  }));
+  await assertFails(getDoc(data));
+  await assertSucceeds(deleteDoc(ref(c.owner, requestPath('pending-uid'))));
+});
