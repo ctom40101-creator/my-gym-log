@@ -24,3 +24,10 @@
 - Hardened `AccessRequests`, `UserIndex`, and private data rules. The latest emulator run passed 10 of 10 cases. Approved status is the normal member authorization source; the verified owner token is the explicit admin bootstrap exception.
 - Emulator on this Windows runtime requires Java 21 and `TEMP`/`TMP`/`java.io.tmpdir` set to `C:\Windows\Temp` because the default temporary directory caused a Java loopback socket error.
 - Next: Worker unit contracts and implementation, then Google-only frontend flow. The Rules candidate remains local to this branch until the Final Release Gate.
+
+## 2026-09-24 — Worker candidate
+
+- Added local tests for signed Firebase ID tokens, verified owner identity, duplicate owner email / UID mismatch, owner self-protection, target lookup, disable, and delete only after disable plus explicit cleanup confirmation.
+- Worker exchanges its service account assertion for Google OAuth only after verified admin authorization. The service account is a required Cloudflare Secret binding; no value is stored in this repository or provided to the Worker yet.
+- Worker source and Wrangler config are branch artifacts only. No Cloudflare deployment, secret provision, traffic cutover, or Production Auth mutation occurred.
+- Local Worker tests passed 8 of 8 after the initial red phase. Remaining validation includes Wrangler dry run, frontend integration, and full regression checks.

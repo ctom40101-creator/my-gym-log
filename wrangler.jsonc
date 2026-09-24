@@ -1,0 +1,13 @@
+{
+  "name": "my-gym-log-security-v1",
+  "main": "worker/src/index.js",
+  "compatibility_date": "2026-09-24",
+  "workers_dev": true,
+  "vars": {
+    "FIREBASE_PROJECT_ID": "mygymlog-604bc",
+    "FRONTEND_ORIGIN": "https://my-gym-log.onrender.com"
+  },
+  "secrets": {
+    "required": ["SERVICE_ACCOUNT_JSON"]
+  }
+}
