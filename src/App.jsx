@@ -1859,7 +1859,7 @@ const App = () => {
     if (!isAuthReady) return <div className="p-10 text-center">Loading...</div>;
     if (!currentUser) return <AuthScreen />;
     if (!['approved', 'admin', 'legacy'].includes(accessState)) return <>
-        {accessState === 'legacy' && migrationPolicy && <LegacyMigrationNotice key={signInKey} user={currentUser} claims={claims} policy={migrationPolicy} signInKey={signInKey} onPolicyChange={setMigrationPolicy} />}
+        {migrationPolicy && <LegacyMigrationNotice key={signInKey} user={currentUser} claims={claims} policy={migrationPolicy} signInKey={signInKey} onPolicyChange={setMigrationPolicy} />}
         <AccessStatusScreen state={accessState} user={currentUser} claims={claims} db={db} selfDeleteRequested={selfDeleteRequested} />
     </>;
     if (dataLoadErrorUid === effectiveUserId) return <div className="p-10 text-center">無法載入此帳號的資料，請重新整理或聯絡管理員。</div>;

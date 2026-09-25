@@ -1,5 +1,13 @@
 # Security Hardening V1 progress ledger
 
+## 2026-09-26 — Candidate B recovery and verified blockers
+
+- Recovered clean WIP `ebd6136d72bb52c1f1d676fceea6493b6f3b8887` on the isolated Candidate B branch. Frozen Candidate A and remote main remained at their documented SHAs; no Production mutation occurred.
+- Reproduced Firestore emulator startup with portable Java 21 and Windows system TEMP; the full demo-project Rules suite passed 26/26. The earlier loopback failure was environmental, not a Rules assertion failure.
+- A fresh read-only Production Firebase Auth lookup matched protected E2/E3 UID/email mapping and observed `providerUserInfo` as an explicit array containing only `password` for each; Google was absent. Both existing Auth emails were unverified; `recoveryEmail` was absent. Alias-only evidence was kept outside Git. Cloud Billing read-only API reported no billing account enabled.
+- Security review found the client incorrectly required the Google provider email to equal the original Auth email. A demo Auth emulator showed same-UID linking with a different Google email leaves the original Auth email unverified; Firebase's built-in verification email action, followed by reload and Google sign-in, yields the original UID and a verified Google token. TDD red tests captured the prior failure. The client now supports this verification path, defers private reads while the post-link token is unverified, and keeps the migration notice available in blocked access states. The retention Google-provider veto remains unchanged.
+- After the final recovery-path repair, fresh 90/90 unit tests, 30/30 Worker tests, 26/26 Firestore Rules tests, lint, build, and Wrangler dry-run passed. Final read-only security review found no remaining Critical or Important code issue. A transient SDK user/token mismatch could still cause a fail-closed post-link private read and require retry; it does not unlink password or delete data. Exact freeze SHA is read from the final commit and recorded in the formal Product Mother.
+
 ## 2026-09-24 — preflight
 
 - Gate: `AUTH CHANNEL RECOVERY`.

@@ -1,10 +1,11 @@
-import { GoogleAuthProvider, linkWithPopup, sendPasswordResetEmail, signInWithEmailAndPassword,
-  signOut, unlink } from 'firebase/auth';
+import { GoogleAuthProvider, linkWithPopup, reload, sendEmailVerification, sendPasswordResetEmail,
+  signInWithEmailAndPassword, signOut, unlink } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, runTransaction, Timestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { APP_ID } from '../constants';
 import { DEADLINE_MS, isLegacyTargetPolicy } from './legacyMigrationPolicy';
-import { resetActionSettings, verifyGoogleCompletion, verifyLegacySnapshot, verifyLinked } from './legacyMigration';
+import { resetActionSettings, verifyGoogleCompletion, verifyLinked,
+  verifyPostLinkSnapshot } from './legacyMigration';
 
 const provider = new GoogleAuthProvider();
 provider.setCustomParameters({ prompt: 'select_account' });
@@ -49,7 +50,7 @@ export async function beginLegacyIntent(user) {
     });
   });
   const baseline = await snapshotLegacyData(user.uid);
-  sessionStorage.setItem(progressKey(user.uid), JSON.stringify(baseline));
+  sessionStorage.setItem(progressKey(user.uid), JSON.stringify({ ...baseline, originalEmail: user.email }));
   return baseline;
 }
 
@@ -66,12 +67,27 @@ export async function linkCurrentLegacyUser(user) {
   if (Date.now() >= DEADLINE_MS || !isLegacyTargetPolicy(policy, user.uid)
     || policy.state !== 'GOOGLE_LINKED_VERIFYING'
     || !Number.isFinite(intentExpiry) || intentExpiry <= Date.now()) throw new Error('legacy_intent_expired');
-  const linked = await linkWithPopup(user, provider);
-  verifyLinked(linked.user, user.uid, user.email);
   const baseline = readLegacyProgress(user.uid);
-  if (!baseline) throw new Error('baseline_unavailable');
-  verifyLegacySnapshot(baseline, await snapshotLegacyData(user.uid));
+  if (!baseline?.originalEmail) throw new Error('baseline_unavailable');
+  const linked = await linkWithPopup(user, provider);
+  verifyLinked(linked.user, user.uid, baseline.originalEmail);
+  await verifyPostLinkSnapshot(linked.user, baseline, () => snapshotLegacyData(user.uid));
   return linked.user;
+}
+
+export async function sendLegacyVerificationEmail(user) {
+  if (!user || !user.providerData?.some(item => item.providerId === 'google.com') || user.emailVerified) {
+    throw new Error('legacy_verification_not_required');
+  }
+  verifyLinked(user, user.uid, readLegacyProgress(user.uid)?.originalEmail);
+  await sendEmailVerification(user, resetActionSettings());
+}
+
+export async function refreshLegacyEmailVerification(user) {
+  await reload(user);
+  verifyLinked(user, user.uid, readLegacyProgress(user.uid)?.originalEmail);
+  await user.getIdToken(true);
+  return user.emailVerified === true;
 }
 
 export async function signOutForGoogleVerification() { await signOut(auth); }
@@ -83,8 +99,8 @@ export async function finishLegacyGoogleMigration(user) {
   }
   const token = await user.getIdTokenResult(true);
   const baseline = readLegacyProgress(user.uid);
-  if (!baseline) throw new Error('baseline_unavailable');
-  verifyGoogleCompletion(user, token.claims, user.uid, user.email,
+  if (!baseline?.originalEmail) throw new Error('baseline_unavailable');
+  verifyGoogleCompletion(user, token.claims, user.uid, baseline.originalEmail,
     baseline, await snapshotLegacyData(user.uid));
   if (user.providerData?.some(item => item.providerId === 'password')) await unlink(user, 'password');
   await updateDoc(doc(db, 'MigrationPolicies', user.uid), { state: 'MIGRATED_GOOGLE_ONLY' });

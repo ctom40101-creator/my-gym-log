@@ -17,11 +17,24 @@ export function resetActionSettings() {
   return { url: 'https://my-gym-log.onrender.com/?legacyMigration=1', handleCodeInApp: false };
 }
 
-export function verifyLinked(user, uid, email) {
+export function verifyLinked(user, uid, originalEmail) {
   if (user?.uid !== uid) throw new Error('uid_mismatch');
-  if (!user.providerData?.some(item => item.providerId === 'google.com' && item.email?.toLowerCase() === email.toLowerCase())) {
+  if (!originalEmail || user.email?.toLowerCase() !== originalEmail.toLowerCase()) {
+    throw new Error('auth_email_changed');
+  }
+  if (!user.providerData?.some(item => item.providerId === 'google.com')) {
     throw new Error('google_provider_mismatch');
   }
+}
+
+export function linkedGoogleNextStep(user) {
+  return user?.emailVerified === true ? 'google-sign-in' : 'verify-original-email';
+}
+
+export async function verifyPostLinkSnapshot(user, baseline, readSnapshot) {
+  if (linkedGoogleNextStep(user) === 'verify-original-email') return false;
+  verifyLegacySnapshot(baseline, await readSnapshot());
+  return true;
 }
 
 export function verifyLegacySnapshot(before, after) {
@@ -46,6 +59,7 @@ export function verifyGoogleCompletion(user, token, uid, email, before, after) {
 
 export async function runLegacyMigration({ user, policy, operations }) {
   const uid = user?.uid;
+  const originalEmail = user?.email;
   if (!isLegacyTargetPolicy(policy, uid) || user.email === 'ctom40101@gmail.com'
     || !user.providerData?.some(item => item.providerId === 'password')) {
     throw new Error('legacy_identity_mismatch');
@@ -53,11 +67,11 @@ export async function runLegacyMigration({ user, policy, operations }) {
   const baseline = await operations.snapshot(uid);
   await operations.beginIntent(uid);
   const linked = await operations.linkGoogle(user);
-  verifyLinked(linked, uid, user.email);
+  verifyLinked(linked, uid, originalEmail);
   verifyLegacySnapshot(baseline, await operations.snapshot(uid));
   const googleUser = await operations.googleSignIn();
   const token = await operations.freshGoogleToken(googleUser);
-  verifyGoogleCompletion(googleUser, token, uid, user.email, baseline, await operations.snapshot(uid));
+  verifyGoogleCompletion(googleUser, token, uid, originalEmail, baseline, await operations.snapshot(uid));
   await operations.unlinkPassword(googleUser);
   await operations.complete(uid);
   return { uid, state: 'MIGRATED_GOOGLE_ONLY' };

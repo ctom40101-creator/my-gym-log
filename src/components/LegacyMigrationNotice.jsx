@@ -1,25 +1,29 @@
 import { useEffect, useState } from 'react';
-import { migrationNoticeModel } from '../services/legacyMigration';
+import { linkedGoogleNextStep, migrationNoticeModel } from '../services/legacyMigration';
 import { beginLegacyIntent, finishLegacyGoogleMigration, linkCurrentLegacyUser,
-  readLegacyProgress, sendMigrationReset, signOutForGoogleVerification } from '../services/legacyMigrationClient';
+  readLegacyProgress, refreshLegacyEmailVerification, sendLegacyVerificationEmail,
+  sendMigrationReset, signOutForGoogleVerification } from '../services/legacyMigrationClient';
 
 export default function LegacyMigrationNotice({ user, claims, policy, signInKey, onPolicyChange }) {
   const [now, setNow] = useState(Date.now());
   const [modalOpen, setModalOpen] = useState(true);
   const [prepared, setPrepared] = useState(false);
   const [linkedThisSession, setLinkedThisSession] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(user?.emailVerified === true);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(timer);
   }, []);
+  useEffect(() => { setEmailVerified(user?.emailVerified === true); }, [user?.uid, user?.emailVerified, signInKey]);
   const model = migrationNoticeModel(policy, user?.uid, null, now, signInKey);
   if (!model.banner || user?.email === 'ctom40101@gmail.com') return null;
   const googleLinked = linkedThisSession || user.providerData?.some(item => item.providerId === 'google.com');
   const passwordLinked = user.providerData?.some(item => item.providerId === 'password');
   const googleSession = claims?.firebase?.sign_in_provider === 'google.com';
   const hasBaseline = !!readLegacyProgress(user.uid);
+  const nextStep = linkedGoogleNextStep({ emailVerified });
   const run = async (action) => {
     setBusy(true);
     setStatus('');
@@ -33,9 +37,22 @@ export default function LegacyMigrationNotice({ user, claims, policy, signInKey,
     setStatus('原 UID 與資料清單已核對。請選擇本人 Google 帳號連結。');
   });
   const link = () => run(async () => {
-    await linkCurrentLegacyUser(user);
+    const linked = await linkCurrentLegacyUser(user);
     setLinkedThisSession(true);
-    setStatus('Google 已連結到原 UID。請登出，再按 Google 登入完成驗證。');
+    setEmailVerified(linked.emailVerified === true);
+    setStatus(linkedGoogleNextStep(linked) === 'verify-original-email'
+      ? 'Google 已連結到原 UID。請先驗證原 Firebase 帳號 Email，再以 Google 登入完成遷移。'
+      : 'Google 已連結到原 UID。請登出，再按 Google 登入完成驗證。');
+  });
+  const sendVerification = () => run(async () => {
+    await sendLegacyVerificationEmail(user);
+    setStatus('驗證信已送往原 Firebase 帳號 Email。完成信中驗證後，請按「重新檢查 Email 驗證」。');
+  });
+  const refreshVerification = () => run(async () => {
+    const verified = await refreshLegacyEmailVerification(user);
+    setEmailVerified(verified);
+    setStatus(verified ? '原 Email 已驗證。請登出，再按 Google 登入完成驗證。'
+      : '原 Email 尚未驗證。請完成驗證信中的步驟後再檢查。');
   });
   const finish = () => run(async () => {
     const completed = await finishLegacyGoogleMigration(user);
@@ -48,8 +65,11 @@ export default function LegacyMigrationNotice({ user, claims, policy, signInKey,
   const actions = <div className="mt-3 flex flex-wrap gap-2">
     {!googleLinked && passwordLinked && !prepared && <button type="button" disabled={busy} onClick={prepare} className="rounded-lg bg-white px-3 py-2 font-bold text-red-800 disabled:opacity-60">立即連結 Google</button>}
     {!googleLinked && passwordLinked && prepared && <button type="button" disabled={busy} onClick={link} className="rounded-lg bg-white px-3 py-2 font-bold text-red-800 disabled:opacity-60">選擇 Google 帳號並連結</button>}
-    {googleLinked && passwordLinked && !googleSession && <button type="button" disabled={busy} onClick={() => run(signOutForGoogleVerification)} className="rounded-lg bg-white px-3 py-2 font-bold text-red-800 disabled:opacity-60">登出後以 Google 再登入驗證</button>}
-    {googleLinked && googleSession && hasBaseline && <button type="button" disabled={busy} onClick={finish} className="rounded-lg bg-white px-3 py-2 font-bold text-red-800 disabled:opacity-60">完成 Google 遷移驗證</button>}
+    {googleLinked && passwordLinked && !googleSession && !hasBaseline && <button type="button" disabled={busy} onClick={prepare} className="rounded-lg bg-white px-3 py-2 font-bold text-red-800 disabled:opacity-60">重新核對原 UID 與資料</button>}
+    {googleLinked && nextStep === 'verify-original-email' && <button type="button" disabled={busy} onClick={sendVerification} className="rounded-lg bg-white px-3 py-2 font-bold text-red-800 disabled:opacity-60">寄送原 Email 驗證信</button>}
+    {googleLinked && nextStep === 'verify-original-email' && <button type="button" disabled={busy} onClick={refreshVerification} className="rounded-lg border border-white px-3 py-2 text-white disabled:opacity-60">重新檢查 Email 驗證</button>}
+    {googleLinked && passwordLinked && !googleSession && nextStep === 'google-sign-in' && <button type="button" disabled={busy} onClick={() => run(signOutForGoogleVerification)} className="rounded-lg bg-white px-3 py-2 font-bold text-red-800 disabled:opacity-60">登出後以 Google 再登入驗證</button>}
+    {googleLinked && googleSession && hasBaseline && nextStep === 'google-sign-in' && <button type="button" disabled={busy} onClick={finish} className="rounded-lg bg-white px-3 py-2 font-bold text-red-800 disabled:opacity-60">完成 Google 遷移驗證</button>}
     {passwordLinked && <button type="button" disabled={busy} onClick={reset} className="rounded-lg border border-white px-3 py-2 text-white disabled:opacity-60">忘記密碼／寄送重設 Email</button>}
   </div>;
   return <>
