@@ -1,6 +1,6 @@
 import { FIRST_DELETION_MS, evaluateDeletion, isLegacyTargetPolicy } from '../../src/services/legacyMigrationPolicy.js';
 
-export async function runRetention(api, now = Date.now()) {
+export async function runRetention(api, now = Date.now(), cohort = null) {
   const result = { examined: 0, skipped: 0, deferred: 0, deleted: 0 };
   if (!Number.isFinite(now) || now < FIRST_DELETION_MS) return result;
   const ownerUid = await api.getOwnerUid();
@@ -8,6 +8,7 @@ export async function runRetention(api, now = Date.now()) {
   const targets = await api.listTargets();
   if (!Array.isArray(targets)) throw new Error('target_roster_unavailable');
   for (const target of targets) {
+    if (cohort && target?.policy?.cohort !== cohort) continue;
     const uid = target?.uid;
     result.examined++;
     if (!uid || uid === ownerUid) { result.skipped++; continue; }
@@ -46,12 +47,23 @@ export async function runRetention(api, now = Date.now()) {
       return result;
     }
     await api.assertLock(uid, lockId);
-    const privateResult = await api.deletePrivateRecursively(uid, lockId);
-    if (!privateResult?.complete) { result.deferred++; return result; }
-    await api.assertLock(uid, lockId);
-    await api.deleteIndex(uid, lockId);
-    await api.assertLock(uid, lockId);
-    await api.deleteAccessRequest(uid, lockId);
+    let privateResult;
+    try {
+      privateResult = await api.deletePrivateRecursively(uid, lockId);
+      if (!privateResult?.complete) { result.deferred++; return result; }
+      await api.assertLock(uid, lockId);
+      await api.deleteIndex(uid, lockId);
+      await api.assertLock(uid, lockId);
+      await api.deleteAccessRequest(uid, lockId);
+    } catch (error) {
+      if (error?.message !== 'google_linked_during_cleanup') throw error;
+      const linked = await api.getAuth(uid);
+      if (!linked?.providerUserInfo?.some(item => item.providerId === 'google.com')) throw error;
+      if (linked.disabled) await api.restoreAuth(uid);
+      await api.cancelForGoogle(uid);
+      result.skipped++;
+      return result;
+    }
     const finalAuth = await api.getAuth(uid);
     const finalPolicy = await api.getPolicy(uid);
     const final = evaluateDeletion({ policy: finalPolicy?.policy, auth: finalAuth, uid, ownerUid, now });

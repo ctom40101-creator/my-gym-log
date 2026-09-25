@@ -12,20 +12,18 @@ test('recursive cleanup deletes Settings and nested missing-parent descendants, 
   ]);
   const io = {
     documentExists: async path => documents.has(path),
-    listCollections: async path => {
-      if (path === root) return ['LogDB', 'Settings'];
-      if (path === `${root}/LogDB/missing-parent`) return ['Nested'];
-      return [];
-    },
-    listDocuments: async path => {
-      if (path === `${root}/LogDB`) return [{ path: `${path}/log1`, exists: true }, { path: `${path}/missing-parent`, exists: false }];
-      if (path === `${root}/LogDB/missing-parent/Nested`) return [{ path: `${path}/deep`, exists: true }];
-      if (path === `${root}/Settings`) return [{ path: `${path}/profile`, exists: true }];
-      return [];
-    },
+    listCollections: async path => [...new Set([...documents]
+      .filter(item => item.startsWith(`${path}/`))
+      .map(item => item.slice(path.length + 1).split('/')[0]))],
+    listDocuments: async path => [...new Set([...documents]
+      .filter(item => item.startsWith(`${path}/`))
+      .map(item => `${path}/${item.slice(path.length + 1).split('/')[0]}`))]
+      .map(item => ({ path: item, exists: documents.has(item) })),
     deleteDocument: async path => { documents.delete(path); },
   };
-  assert.deepEqual(await deletePrivateTree(root, io, 50), { complete: true, deleted: 3 });
+  const result = await deletePrivateTree(root, io, 50);
+  assert.equal(result.complete, true);
+  assert.equal(result.deleted, 3);
   assert.deepEqual([...documents], ['artifacts/demo/public/data/MovementDB/shared']);
 });
 
@@ -38,10 +36,40 @@ test('bounded partial deletion can restart and eventually finish', async () => {
     deleteDocument: async path => { documents.delete(path); },
   };
   let complete = false;
+  let cursor = root;
   for (let attempt = 0; attempt < 10 && !complete; attempt++) {
-    const result = await deletePrivateTree(root, io, 4);
+    const result = await deletePrivateTree(root, io, 4, cursor);
     complete = result.complete;
+    cursor = result.cursor;
   }
   assert.equal(complete, true);
   assert.equal(documents.size, 0);
+});
+
+test('persisted cursor reaches and removes a deeply nested leaf across bounded Cron runs', async () => {
+  const path = [root];
+  for (let level = 0; level < 30; level++) path.push(`${path.at(-1)}/C${level}/d${level}`);
+  let leafExists = true;
+  const io = {
+    documentExists: async current => current === path.at(-1) && leafExists,
+    listCollections: async current => {
+      const level = path.indexOf(current);
+      return leafExists && level >= 0 && level < path.length - 1 ? [`C${level}`] : [];
+    },
+    listDocuments: async collectionPath => {
+      const level = path.findIndex(current => collectionPath === `${current}/C${path.indexOf(current)}`);
+      return leafExists && level >= 0 && level < path.length - 1
+        ? [{ path: path[level + 1], exists: level + 1 === path.length - 1 }] : [];
+    },
+    deleteDocument: async current => { assert.equal(current, path.at(-1)); leafExists = false; },
+  };
+  let cursor = root;
+  let complete = false;
+  for (let run = 0; run < 100 && !complete; run++) {
+    const result = await deletePrivateTree(root, io, 6, cursor);
+    cursor = result.cursor;
+    complete = result.complete;
+  }
+  assert.equal(complete, true);
+  assert.equal(leafExists, false);
 });

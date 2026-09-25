@@ -53,6 +53,8 @@ export function createRetentionApi(env, token, fetchImpl = fetch) {
     method: 'POST', body: JSON.stringify(body),
   })).body;
   const policyPath = uid => `MigrationPolicies/${validUid(uid)}`;
+  const privateRoot = uid => `artifacts/${appId}/users/${validUid(uid)}`;
+  const jobPath = uid => `RetentionJobs/${validUid(uid)}`;
   const commitPolicy = async (uid, currentUpdateTime, fields, fieldPaths, allowed = []) => request(`${documents}:commit`, {
     method: 'POST', body: JSON.stringify({ writes: [{
       update: { name: `${documents}/${policyPath(uid)}`, fields },
@@ -61,38 +63,29 @@ export function createRetentionApi(env, token, fetchImpl = fetch) {
     }] }),
   }, allowed);
   const listCollectionIds = async path => {
-    const ids = [];
-    let pageToken;
-    for (let page = 0; page < 10; page++) {
-      const { body } = await request(`${docUrl(path)}:listCollectionIds`, {
-        method: 'POST', body: JSON.stringify({ pageSize: 100, ...(pageToken ? { pageToken } : {}) }),
-      });
-      if (!Array.isArray(body.collectionIds || [])) throw new Error('collection_inventory_ambiguous');
-      ids.push(...(body.collectionIds || []));
-      if (!body.nextPageToken) return ids;
-      pageToken = body.nextPageToken;
+    const { body } = await request(`${docUrl(path)}:listCollectionIds`, {
+      method: 'POST', body: JSON.stringify({ pageSize: 1 }),
+    });
+    if (!body || !Array.isArray(body.collectionIds || [])
+      || ((body.collectionIds || []).length === 0 && body.nextPageToken)) {
+      throw new Error('collection_inventory_ambiguous');
     }
-    throw new Error('collection_inventory_too_large');
+    return body.collectionIds || [];
   };
   const listDocuments = async collectionPath => {
-    const rows = [];
-    let pageToken;
-    for (let page = 0; page < 10; page++) {
-      const url = new URL(docUrl(collectionPath));
-      url.searchParams.set('pageSize', '100');
-      url.searchParams.set('showMissing', 'true');
-      if (pageToken) url.searchParams.set('pageToken', pageToken);
-      const { body } = await request(url.toString());
-      if (!Array.isArray(body.documents || [])) throw new Error('document_inventory_ambiguous');
-      for (const item of body.documents || []) {
-        const prefix = `projects/${project}/databases/(default)/documents/`;
-        if (!item.name?.startsWith(prefix)) throw new Error('document_scope_mismatch');
-        rows.push({ path: item.name.slice(prefix.length), exists: !!item.updateTime });
-      }
-      if (!body.nextPageToken) return rows;
-      pageToken = body.nextPageToken;
+    const url = new URL(docUrl(collectionPath));
+    url.searchParams.set('pageSize', '1');
+    url.searchParams.set('showMissing', 'true');
+    const { body } = await request(url.toString());
+    if (!body || !Array.isArray(body.documents || [])
+      || ((body.documents || []).length === 0 && body.nextPageToken)) {
+      throw new Error('document_inventory_ambiguous');
     }
-    throw new Error('document_inventory_too_large');
+    return (body.documents || []).map(item => {
+      const prefix = `projects/${project}/databases/(default)/documents/`;
+      if (!item.name?.startsWith(prefix)) throw new Error('document_scope_mismatch');
+      return { path: item.name.slice(prefix.length), exists: !!item.updateTime };
+    });
   };
   const api = {
     async getOwnerUid() {
@@ -133,6 +126,15 @@ export function createRetentionApi(env, token, fetchImpl = fetch) {
       return { localId: user.localId, email: user.email, disabled: user.disabled === true,
         providerUserInfo: user.providerUserInfo };
     },
+    async assertNoGoogle(uid) {
+      const freshAuth = await api.getAuth(uid);
+      if (!freshAuth || !Array.isArray(freshAuth.providerUserInfo)) {
+        throw new Error('auth_ambiguous_during_cleanup');
+      }
+      if (freshAuth.providerUserInfo.some(item => item.providerId === 'google.com')) {
+        throw new Error('google_linked_during_cleanup');
+      }
+    },
     async acquireLock(uid, updateTime, now) {
       const fresh = await api.getPolicy(uid);
       if (!fresh || fresh.updateTime !== updateTime || fresh.policy.deletionHold) return false;
@@ -166,23 +168,66 @@ export function createRetentionApi(env, token, fetchImpl = fetch) {
         { state: fsString('MIGRATED_GOOGLE_ONLY'), deletionHold: fsBoolean(true) },
         ['state', 'deletionHold', 'lockId', 'lockExpiresAt']);
     },
+    async loadCursor(uid) {
+      const root = privateRoot(uid);
+      const job = await getDocument(jobPath(uid));
+      const cursor = job ? string(job, 'cursorPath') : root;
+      if (typeof cursor !== 'string' || (cursor !== root && !cursor.startsWith(`${root}/`))) {
+        throw new Error('retention_cursor_ambiguous');
+      }
+      return cursor;
+    },
+    async saveCursor(uid, cursor) {
+      const root = privateRoot(uid);
+      if (typeof cursor !== 'string' || (cursor !== root && !cursor.startsWith(`${root}/`))) {
+        throw new Error('retention_cursor_ambiguous');
+      }
+      const url = new URL(docUrl(jobPath(uid)));
+      url.searchParams.set('updateMask.fieldPaths', 'cursorPath');
+      await request(url.toString(), { method: 'PATCH', body: JSON.stringify({ fields: {
+        cursorPath: fsString(cursor),
+      } }) });
+    },
+    async clearCursor(uid) { await deleteDocument(jobPath(uid)); },
     async deletePrivateRecursively(uid, lockId) {
-      const root = `artifacts/${appId}/users/${validUid(uid)}`;
+      const root = privateRoot(uid);
+      const cursor = await api.loadCursor(uid);
       const result = await deletePrivateTree(root, {
         documentExists: async path => !!await getDocument(path),
         listCollections: listCollectionIds,
         listDocuments,
-        deleteDocument: async path => { await api.assertLock(uid, lockId); await deleteDocument(path); },
-      }, 25);
-      if (!result.complete) return result;
-      return { ...result, complete: await api.verifyPrivateRootEmpty(uid) };
+        deleteDocument: async path => {
+          await api.assertLock(uid, lockId);
+          await api.assertNoGoogle(uid);
+          await deleteDocument(path);
+        },
+      }, 7, cursor);
+      await api.assertLock(uid, lockId);
+      if (!result.complete) {
+        await api.saveCursor(uid, result.cursor);
+        return result;
+      }
+      if (!await api.verifyPrivateRootEmpty(uid)) {
+        await api.saveCursor(uid, root);
+        return { ...result, complete: false, cursor: root };
+      }
+      await api.clearCursor(uid);
+      return result;
     },
     async verifyPrivateRootEmpty(uid) {
-      const root = `artifacts/${appId}/users/${validUid(uid)}`;
+      const root = privateRoot(uid);
       return !await getDocument(root) && (await listCollectionIds(root)).length === 0;
     },
-    async deleteIndex(uid, lockId) { await api.assertLock(uid, lockId); await deleteDocument(`artifacts/${appId}/public/data/UserIndex/${validUid(uid)}`); },
-    async deleteAccessRequest(uid, lockId) { await api.assertLock(uid, lockId); await deleteDocument(`AccessRequests/${validUid(uid)}`); },
+    async deleteIndex(uid, lockId) {
+      await api.assertLock(uid, lockId);
+      await api.assertNoGoogle(uid);
+      await deleteDocument(`artifacts/${appId}/public/data/UserIndex/${validUid(uid)}`);
+    },
+    async deleteAccessRequest(uid, lockId) {
+      await api.assertLock(uid, lockId);
+      await api.assertNoGoogle(uid);
+      await deleteDocument(`AccessRequests/${validUid(uid)}`);
+    },
     async verifyCleanup(uid) {
       return await api.verifyPrivateRootEmpty(uid)
         && !await getDocument(`artifacts/${appId}/public/data/UserIndex/${validUid(uid)}`)

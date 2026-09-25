@@ -111,3 +111,44 @@ test('lost lock after Auth disable prevents private deletion', async () => {
   await assert.rejects(runRetention(f.api, FIRST_DELETION_MS), /lock_lost/);
   assert.deepEqual(f.calls, ['lock', 'check-lock', 'disable', 'check-lock']);
 });
+
+test('Google link detected during a private cleanup batch restores Auth and stops later deletes', async () => {
+  const f = fixture({ deletePrivateRecursively: async () => {
+    f.calls.push('private');
+    f.setAuth({ ...auth, disabled: true, providerUserInfo: [{ providerId: 'google.com' }] });
+    throw new Error('google_linked_during_cleanup');
+  } });
+  await runRetention(f.api, FIRST_DELETION_MS);
+  assert.deepEqual(f.calls, ['lock', 'check-lock', 'disable', 'check-lock', 'private', 'restore', 'cancel']);
+});
+
+test('E3 window proceeds despite E2 needing many cleanup passes', async () => {
+  const e3Uid = 'fixture-e3-uid';
+  const f = fixture({
+    listTargets: async () => [
+      { uid, policy, updateTime: 'v1' },
+      { uid: e3Uid, policy: { ...policy, cohort: 'E3', originalUid: e3Uid }, updateTime: 'v1' },
+    ],
+    getPolicy: async targetUid => ({ policy: { ...policy, cohort: targetUid === e3Uid ? 'E3' : 'E2', originalUid: targetUid }, updateTime: 'v1' }),
+    getAuth: async targetUid => ({ ...auth, localId: targetUid }),
+    deletePrivateRecursively: async targetUid => {
+      f.calls.push(`private:${targetUid}`);
+      return { complete: false };
+    },
+  });
+  const result = await runRetention(f.api, FIRST_DELETION_MS + 15 * 60_000, 'E3');
+  assert.equal(result.deferred, 1);
+  assert.equal(f.calls.includes(`private:${uid}`), false);
+  assert.equal(f.calls.includes(`private:${e3Uid}`), true);
+});
+
+test('Google linkage before metadata deletion restores Auth and stops subsequent cleanup', async () => {
+  const f = fixture({ deleteIndex: async () => {
+    f.calls.push('index-check');
+    f.setAuth({ ...auth, disabled: true, providerUserInfo: [{ providerId: 'google.com' }] });
+    throw new Error('google_linked_during_cleanup');
+  } });
+  await runRetention(f.api, FIRST_DELETION_MS);
+  assert.deepEqual(f.calls, ['lock', 'check-lock', 'disable', 'check-lock', 'private',
+    'check-lock', 'index-check', 'restore', 'cancel']);
+});

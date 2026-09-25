@@ -12,6 +12,7 @@ Status: proposed custom role; **not provisioned** during Candidate build. The fi
 | Create minimal receipt | Firestore `patch` with `exists=false` | `datastore.entities.create` |
 | CAS lock, migration cancellation, final state | Firestore `commit` update with `updateTime` | `datastore.entities.update` |
 | Delete private descendants, root, UserIndex, AccessRequest | Firestore `delete` | `datastore.entities.delete` |
+| Persist and clear admin-only traversal cursor | Firestore `RetentionJobs/{uid}` get/patch/delete | `datastore.entities.get`, `datastore.entities.create`, `datastore.entities.update`, `datastore.entities.delete` |
 
 No Owner, Editor, Firebase Admin, project wildcard admin, or service-agent role is requested. The role is project-scoped because IAM does not use Firestore Security Rules for server OAuth calls; the Worker code and protected roster strictly bound target paths. OAuth scopes are `identitytoolkit` and `datastore` only. Custom-role API permission behavior must be verified in a non-Production target or a fresh read-only permission preflight before grant; a missing permission is a stop, not a reason to grant broad admin.
 

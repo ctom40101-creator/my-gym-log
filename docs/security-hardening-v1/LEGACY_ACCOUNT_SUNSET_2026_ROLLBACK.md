@@ -16,7 +16,7 @@ Stop the retention Cron first and verify zero scheduled invocations. Restore the
 
 ## After retention lock or partial cleanup
 
-An in-progress lock or disabled Auth is an incident, not a routine revert. Disable Cron, set `deletionHold=true` in protected policy, preserve logs/receipt metadata, and compare fresh Auth provider data. If Google is linked, restore Auth enabled state and cancel deletion; restore any already removed data from the protected backup to the **same original UID**. If Google is absent, do not re-enable product access until the exact private tree, index and AccessRequest are reconstructed and verified. Never recreate an Auth user with a new UID and call that a rollback.
+An in-progress lock or disabled Auth is an incident, not a routine revert. Disable Cron, set `deletionHold=true` in protected policy, preserve logs, `RetentionJobs/{uid}` traversal cursor and receipt metadata, and compare fresh Auth provider data. If Google is linked, restore Auth enabled state and cancel deletion; restore any already removed data from the protected backup to the **same original UID**. If Google is absent, do not re-enable product access until the exact private tree, index and AccessRequest are reconstructed and verified. Never recreate an Auth user with a new UID and call that a rollback.
 
 ## After Auth deletion
 

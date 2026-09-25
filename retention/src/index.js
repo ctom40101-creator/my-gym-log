@@ -27,7 +27,7 @@ export async function serviceAccountToken(env, fetchImpl = fetch) {
 }
 
 export function createScheduledWorker({ getToken = serviceAccountToken, makeApi = createRetentionApi,
-  logger = console, fetchImpl = fetch } = {}) {
+  run = runRetention, logger = console, fetchImpl = fetch } = {}) {
   return {
     async fetch() { return new Response('Not found', { status: 404 }); },
     async scheduled(controller, env) {
@@ -35,9 +35,11 @@ export function createScheduledWorker({ getToken = serviceAccountToken, makeApi 
         const now = controller?.scheduledTime;
         if (!Number.isFinite(now)) throw new Error('scheduled_time_invalid');
         if (now < FIRST_DELETION_MS) return;
+        const cohort = { '15 * * * *': 'E2', '30 * * * *': 'E3' }[controller?.cron];
+        if (!cohort) return;
         const token = await getToken(env, fetchImpl);
         const api = makeApi(env, token, fetchImpl);
-        await runRetention(api, now);
+        await run(api, now, cohort);
       } catch {
         logger.error('retention_failed');
       }

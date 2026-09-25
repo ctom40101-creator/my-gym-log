@@ -16,7 +16,20 @@ test('upstream secret-bearing exception is not copied to Worker logs', async () 
     getToken: async () => { throw new Error('redaction-sentinel'); },
     logger: { error: (...args) => logged.push(args.join(' ')) },
   });
-  await worker.scheduled({ scheduledTime: FIRST_DELETION_MS }, {});
+  await worker.scheduled({ scheduledTime: FIRST_DELETION_MS, cron: '15 * * * *' }, {});
   assert.equal(logged.length, 1);
   assert.equal(logged.join(' ').includes('redaction-sentinel'), false);
+});
+
+test('E2 and E3 have independent deletion windows and unknown Cron does nothing', async () => {
+  const cohorts = [];
+  const worker = createScheduledWorker({
+    getToken: async () => 'fixture-token',
+    makeApi: () => ({}),
+    run: async (_api, _now, cohort) => { cohorts.push(cohort); },
+  });
+  await worker.scheduled({ scheduledTime: FIRST_DELETION_MS, cron: '15 * * * *' }, {});
+  await worker.scheduled({ scheduledTime: FIRST_DELETION_MS + 15 * 60_000, cron: '30 * * * *' }, {});
+  await worker.scheduled({ scheduledTime: FIRST_DELETION_MS, cron: '45 * * * *' }, {});
+  assert.deepEqual(cohorts, ['E2', 'E3']);
 });

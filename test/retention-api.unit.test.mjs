@@ -62,6 +62,9 @@ test('failed Firestore compare-and-swap returns lock lost without deleting anyth
 
 test('Firestore delete accepts an empty successful response', async () => {
   const api = createRetentionApi(config, 'fixture-token', async (url) => {
+    if (url.endsWith('accounts:lookup')) return response({ users: [{
+      localId: 'fixture-uid', email: 'fixture@example.test', providerUserInfo: [], disabled: true,
+    }] });
     if (url.endsWith('/MigrationPolicies/fixture-uid')) return response({ fields: {
       state: { stringValue: 'DELETION_IN_PROGRESS' }, lockId: { stringValue: 'fixture-lock' },
       deletionHold: { booleanValue: false }, lockExpiresAt: { timestampValue: '2099-01-01T00:00:00Z' },
@@ -78,10 +81,14 @@ test('private Firestore paths encode special document IDs before requests', asyn
   let deleted = false;
   const api = createRetentionApi(config, 'fixture-token', async (url, init) => {
     urls.push(url);
+    if (url.endsWith('accounts:lookup')) return response({ users: [{
+      localId: 'fixture-uid', email: 'fixture@example.test', providerUserInfo: [], disabled: true,
+    }] });
     if (url.endsWith('/MigrationPolicies/fixture-uid')) return response({ fields: {
       state: { stringValue: 'DELETION_IN_PROGRESS' }, lockId: { stringValue: 'fixture-lock' },
       deletionHold: { booleanValue: false }, lockExpiresAt: { timestampValue: '2099-01-01T00:00:00Z' },
     } });
+    if (url.endsWith('/RetentionJobs/fixture-uid') && init?.method !== 'DELETE') return response({}, 404);
     if (url.includes(':listCollectionIds')) return response({ collectionIds: deleted || url.includes('note') ? [] : ['LogDB'] });
     if (url.includes('showMissing=true')) return response({ documents: [{
       name: `projects/demo-project/databases/(default)/documents/${special}`,
@@ -95,4 +102,59 @@ test('private Firestore paths encode special document IDs before requests', asyn
   assert.equal(complete.complete, true);
   assert.ok(urls.some(url => url.includes('note%2350%25%3F')));
   assert.ok(urls.every(url => !url.includes('#')));
+});
+
+test('retention cursor is persisted under admin-only job path for the next Cron', async () => {
+  const calls = [];
+  const api = createRetentionApi(config, 'fixture-token', async (url, init) => {
+    calls.push({ url, init });
+    if (init?.method === 'PATCH') return response({});
+    return response({}, 404);
+  });
+  assert.equal(await api.loadCursor('fixture-uid'), 'artifacts/demo-project/users/fixture-uid');
+  await api.saveCursor('fixture-uid', 'artifacts/demo-project/users/fixture-uid/LogDB/deep');
+  assert.ok(calls.some(call => call.url.includes('/RetentionJobs/fixture-uid') && call.init?.method === 'PATCH'));
+  assert.ok(calls.every(call => !call.url.includes('MovementDB')));
+});
+
+test('an empty Firestore page with a continuation token cannot prove cleanup', async () => {
+  const root = 'artifacts/demo-project/users/fixture-uid';
+  const api = createRetentionApi(config, 'fixture-token', async url => {
+    if (url.includes(':listCollectionIds')) return response({ collectionIds: [], nextPageToken: 'next' });
+    if (url.endsWith(`/${root}`)) return response({}, 404);
+    return response({});
+  });
+  await assert.rejects(api.verifyPrivateRootEmpty('fixture-uid'), /collection_inventory_ambiguous/);
+});
+
+test('an empty document page with a continuation token cannot let tree delete its parent', async () => {
+  const root = 'artifacts/demo-project/users/fixture-uid';
+  const api = createRetentionApi(config, 'fixture-token', async url => {
+    if (url.endsWith('/RetentionJobs/fixture-uid')) return response({}, 404);
+    if (url.includes(':listCollectionIds')) return response({ collectionIds: ['LogDB'] });
+    if (url.includes('showMissing=true')) return response({ documents: [], nextPageToken: 'next' });
+    if (url.endsWith(`/${root}`)) return response({ name: root });
+    return response({});
+  });
+  await assert.rejects(api.deletePrivateRecursively('fixture-uid', 'fixture-lock'), /document_inventory_ambiguous/);
+});
+
+test('Google linkage vetoes UserIndex and AccessRequest deletion before each request', async () => {
+  for (const method of ['deleteIndex', 'deleteAccessRequest']) {
+    const calls = [];
+    const api = createRetentionApi(config, 'fixture-token', async (url, init) => {
+      calls.push({ url, init });
+      if (url.endsWith('/MigrationPolicies/fixture-uid')) return response({ fields: {
+        state: { stringValue: 'DELETION_IN_PROGRESS' }, lockId: { stringValue: 'fixture-lock' },
+        deletionHold: { booleanValue: false }, lockExpiresAt: { timestampValue: '2099-01-01T00:00:00Z' },
+      } });
+      if (url.endsWith('accounts:lookup')) return response({ users: [{
+        localId: 'fixture-uid', email: 'fixture@example.test', disabled: true,
+        providerUserInfo: [{ providerId: 'google.com' }],
+      }] });
+      throw new Error('unexpected_url');
+    });
+    await assert.rejects(api[method]('fixture-uid', 'fixture-lock'), /google_linked_during_cleanup/);
+    assert.equal(calls.some(call => call.init?.method === 'DELETE'), false);
+  }
 });
