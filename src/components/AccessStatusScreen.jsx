@@ -11,6 +11,7 @@ const copy = {
   identity_invalid: ['身分無法驗證', '請使用已驗證的 Google 帳號登入；如有舊帳號或 UID 衝突，請聯絡管理員。'],
   request_needed: ['申請使用', '提交申請後，請等待管理員核准。'],
   error: ['暫時無法確認權限', '請稍後重試；目前不會讀取或寫入訓練資料。'],
+  legacy_expired: ['舊帳號遷移期限已過', '帳號資料已停止存取。請聯絡管理員確認帳號狀態。'],
 };
 
 export default function AccessStatusScreen({ state, user, claims, db, selfDeleteRequested = false }) {

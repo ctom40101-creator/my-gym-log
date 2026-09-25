@@ -12,6 +12,7 @@ const base = 'artifacts/mygymlog-604bc';
 const requestPath = uid => `AccessRequests/${uid}`;
 const indexPath = uid => `${base}/public/data/UserIndex/${uid}`;
 const privatePath = uid => `${base}/users/${uid}/Settings/profile`;
+const policyPath = uid => `MigrationPolicies/${uid}`;
 let env;
 
 const token = (email, verified = true, provider = 'google.com') => ({
@@ -36,6 +37,10 @@ async function seed(path, data) {
 async function access(uid, status) {
   await seed(requestPath(uid), { uid, email: `${uid}@example.test`, displayName: uid, status, requestedAt: new Date() });
 }
+async function legacyPolicy(uid, cohort = 'E2') {
+  await seed(policyPath(uid), { program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort, originalUid: uid,
+    deadlineAt: '2026-12-31T15:59:59Z', state: 'LEGACY_PASSWORD_PENDING', deletionHold: false });
+}
 
 before(async () => {
   env = await initializeTestEnvironment({
@@ -48,6 +53,37 @@ beforeEach(async () => {
   await seed('SecurityConfig/owner', { uid: 'owner-uid', email: 'ctom40101@gmail.com' });
 });
 after(async () => env?.cleanup());
+
+test('only rostered E2/E3 password UID reads its policy and own data before deadline', async () => {
+  const legacy = env.authenticatedContext('legacy-uid', token('legacy@example.test', false, 'password'));
+  const otherPassword = env.authenticatedContext('other-password', token('other@example.test', false, 'password'));
+  await legacyPolicy('legacy-uid');
+  await seed(privatePath('legacy-uid'), { nickname: 'private' });
+  await assertSucceeds(getDoc(ref(legacy, policyPath('legacy-uid'))));
+  await assertFails(getDoc(ref(otherPassword, policyPath('legacy-uid'))));
+  await assertSucceeds(getDoc(ref(legacy, privatePath('legacy-uid'))));
+  await assertFails(getDoc(ref(otherPassword, privatePath('legacy-uid'))));
+});
+
+test('password target can acquire verifying intent but cannot claim migrated state', async () => {
+  const legacy = env.authenticatedContext('legacy-uid', token('legacy@example.test', false, 'password'));
+  await legacyPolicy('legacy-uid');
+  await assertSucceeds(updateDoc(ref(legacy, policyPath('legacy-uid')), {
+    state: 'GOOGLE_LINKED_VERIFYING', intentExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+  }));
+  await assertFails(updateDoc(ref(legacy, policyPath('legacy-uid')), { state: 'MIGRATED_GOOGLE_ONLY' }));
+  await assertFails(updateDoc(ref(legacy, policyPath('legacy-uid')), { deletionHold: false, cohort: 'E1' }));
+});
+
+test('general Google and Owner users cannot enter legacy sunset policy', async () => {
+  const c = contexts();
+  await legacyPolicy('legacy-uid');
+  await assertFails(getDoc(ref(c.approved, policyPath('legacy-uid'))));
+  await assertFails(setDoc(ref(c.owner, policyPath('owner-uid')), {
+    program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort: 'E2', originalUid: 'owner-uid',
+    deadlineAt: '2026-12-31T15:59:59Z', state: 'LEGACY_PASSWORD_PENDING', deletionHold: false,
+  }));
+});
 
 test('pending and disabled accounts cannot read private training data', async () => {
   const c = contexts();

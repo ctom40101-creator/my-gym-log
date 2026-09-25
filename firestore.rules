@@ -16,6 +16,50 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/SecurityConfig/owner).data.uid == request.auth.uid;
     }
 
+    function legacyTarget(uid) {
+      return request.auth != null
+        && request.auth.uid == uid
+        && request.auth.token.email != 'ctom40101@gmail.com'
+        && exists(/databases/$(database)/documents/SecurityConfig/owner)
+        && get(/databases/$(database)/documents/SecurityConfig/owner).data.uid != uid
+        && exists(/databases/$(database)/documents/MigrationPolicies/$(uid))
+        && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.program == 'LEGACY_ACCOUNT_SUNSET_2026'
+        && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.originalUid == uid
+        && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.cohort in ['E2', 'E3']
+        && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.deadlineAt == '2026-12-31T15:59:59Z'
+        && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.deletionHold == false;
+    }
+
+    function legacyPasswordAccess(uid) {
+      return legacyTarget(uid)
+        && request.auth.token.firebase.sign_in_provider == 'password'
+        && request.time <= timestamp.value('2026-12-31T15:59:59Z')
+        && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.state
+          in ['LEGACY_PASSWORD_PENDING', 'GOOGLE_LINKED_VERIFYING'];
+    }
+
+    match /MigrationPolicies/{uid} {
+      allow get: if isAdmin() || (request.auth != null && request.auth.uid == uid
+        && request.auth.token.email != 'ctom40101@gmail.com'
+        && resource.data.program == 'LEGACY_ACCOUNT_SUNSET_2026'
+        && resource.data.originalUid == uid && resource.data.cohort in ['E2', 'E3']);
+      allow update: if legacyTarget(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'intentExpiresAt'])
+        && ((request.auth.token.firebase.sign_in_provider == 'password'
+          && request.time <= timestamp.value('2026-12-31T15:59:59Z')
+          && resource.data.state in ['LEGACY_PASSWORD_PENDING', 'GOOGLE_LINKED_VERIFYING']
+          && request.resource.data.state == 'GOOGLE_LINKED_VERIFYING'
+          && request.resource.data.intentExpiresAt is timestamp
+          && request.resource.data.intentExpiresAt > request.time
+          && request.resource.data.intentExpiresAt <= request.time + duration.value(15, 'm')
+          && request.resource.data.intentExpiresAt <= timestamp.value('2026-12-31T15:59:59Z'))
+        || (request.auth.token.firebase.sign_in_provider == 'google.com'
+          && request.auth.token.email_verified == true
+          && resource.data.state == 'GOOGLE_LINKED_VERIFYING'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state'])
+          && request.resource.data.state == 'MIGRATED_GOOGLE_ONLY'));
+    }
+
     match /SecurityConfig/owner {
       allow get: if isAdmin();
     }
@@ -34,7 +78,8 @@ service cloud.firestore {
     }
 
     function canAccessUser(uid) {
-      return isAdmin() || (request.auth != null && request.auth.uid == uid && approved(uid));
+      return isAdmin() || (request.auth != null && request.auth.uid == uid
+        && (approved(uid) || legacyPasswordAccess(uid)));
     }
 
     match /AccessRequests/{uid} {
@@ -84,12 +129,12 @@ service cloud.firestore {
       allow create: if appId == 'mygymlog-604bc'
         && request.auth != null
         && request.auth.uid == uid
-        && (approved(uid) || isAdmin())
+        && (approved(uid) || isAdmin() || legacyPasswordAccess(uid))
         && identityIsValid()
         && request.resource.data.email == request.auth.token.email;
       allow update: if appId == 'mygymlog-604bc'
         && canAccessUser(uid)
-        && (approved(uid) || (isAdmin() && request.auth.uid == uid))
+        && (approved(uid) || legacyPasswordAccess(uid) || (isAdmin() && request.auth.uid == uid))
         && identityIsValid()
         && resource.data.uid == uid
         && request.resource.data.uid == resource.data.uid
@@ -109,7 +154,8 @@ service cloud.firestore {
       }
       allow read: if appId == 'mygymlog-604bc' && knownCollection() && canAccessUser(userId);
       allow create, update: if appId == 'mygymlog-604bc' && knownCollection()
-        && canAccessUser(userId) && (approved(userId) || (isAdmin() && request.auth.uid == userId));
+        && canAccessUser(userId) && (approved(userId) || legacyPasswordAccess(userId)
+          || (isAdmin() && request.auth.uid == userId));
       allow delete: if appId == 'mygymlog-604bc' && knownCollection() && canAccessUser(userId);
     }
   }

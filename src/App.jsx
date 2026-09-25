@@ -15,6 +15,9 @@ import { clearDraft, loadDraft, saveDraft, visibleDraft } from './services/draft
 import { stagedSelfDelete } from './services/accountDeletion';
 import { hasAdminWorker } from './services/adminWorker';
 import AuthScreen from './components/AuthScreen';
+import LegacyMigrationNotice from './components/LegacyMigrationNotice';
+import { readLegacyPolicy } from './services/legacyMigrationClient';
+import { DEADLINE_MS, isLegacyTargetPolicy, legacyProductAccess } from './services/legacyMigrationPolicy';
 import AccessStatusScreen from './components/AccessStatusScreen';
 import AdminScreen from './components/AdminScreen';
 import BodyMetricsModal from './components/BodyMetricsModal';
@@ -1611,6 +1614,8 @@ const App = () => {
     const [accessState, setAccessState] = useState('loading');
     const [selfDeleteRequested, setSelfDeleteRequested] = useState(false);
     const [claims, setClaims] = useState(null);
+    const [migrationPolicy, setMigrationPolicy] = useState(null);
+    const [signInKey, setSignInKey] = useState(0);
     const isAdmin = accessState === 'admin';
     const effectiveUserId = isAdmin && adminViewUser?.id ? adminViewUser.id : userId;
 
@@ -1637,10 +1642,30 @@ const App = () => {
     };
 
     useEffect(() => {
-        if (draftState.uid && ['approved', 'admin'].includes(accessState)) {
+        if (draftState.uid && ['approved', 'admin', 'legacy'].includes(accessState)) {
             saveDraft(localStorage, draftState.uid, draftState.log);
         }
     }, [draftState, accessState]);
+
+    useEffect(() => {
+        if (accessState !== 'legacy') return undefined;
+        let timer;
+        const checkDeadline = () => {
+            if (Date.now() <= DEADLINE_MS) {
+                timer = setTimeout(checkDeadline, Math.min(DEADLINE_MS - Date.now() + 1, 60 * 60_000));
+                return;
+            }
+            setMovementDB([]);
+            setPlansDB([]);
+            setLogDB([]);
+            setBodyMetricsDB([]);
+            setDraftState({ uid: null, log: [] });
+            setLoadedUserId(null);
+            setAccessState('legacy_expired');
+        };
+        checkDeadline();
+        return () => clearTimeout(timer);
+    }, [accessState]);
 
     const onDeletionStaged = (uid) => {
         clearDraft(localStorage, uid);
@@ -1660,6 +1685,8 @@ const App = () => {
             setUserId(u?.uid || null);
             setCurrentUser(u || null);
             setClaims(null);
+            setMigrationPolicy(null);
+            if (u) setSignInKey(value => value + 1);
             setAdminViewUser(null);
             setAccessState(u ? 'loading' : 'unauthenticated');
             setSelfDeleteRequested(false);
@@ -1678,6 +1705,19 @@ const App = () => {
                 if (!active || auth.currentUser?.uid !== u.uid) return;
                 const nextClaims = token.claims;
                 setClaims(nextClaims);
+                let nextPolicy = null;
+                try { nextPolicy = await readLegacyPolicy(u.uid); } catch { /* non-target users have no policy read */ }
+                if (!active || auth.currentUser?.uid !== u.uid) return;
+                if (isLegacyTargetPolicy(nextPolicy, u.uid) && u.email !== 'ctom40101@gmail.com') {
+                    setMigrationPolicy(nextPolicy);
+                }
+                if (nextClaims.firebase?.sign_in_provider === 'password') {
+                    if (isLegacyTargetPolicy(nextPolicy, u.uid) && u.email !== 'ctom40101@gmail.com') {
+                        setAccessState(legacyProductAccess(u, nextClaims, nextPolicy, null) ? 'legacy' : 'legacy_expired');
+                    } else setAccessState('identity_invalid');
+                    setScreen('Profile');
+                    return;
+                }
                 const ownerCandidate = nextClaims.email === 'ctom40101@gmail.com'
                     && nextClaims.email_verified === true
                     && nextClaims.firebase?.sign_in_provider === 'google.com';
@@ -1789,7 +1829,7 @@ const App = () => {
     }, [logDB, movementDB]);
 
     useEffect(() => {
-        if (!isAuthReady || !['approved', 'admin'].includes(accessState) || !effectiveUserId || !db) return;
+        if (!isAuthReady || !['approved', 'admin', 'legacy'].includes(accessState) || !effectiveUserId || !db) return;
         let active = true;
         const loaded = new Set();
         const received = (name, setter, snapshot) => {
@@ -1818,7 +1858,10 @@ const App = () => {
 
     if (!isAuthReady) return <div className="p-10 text-center">Loading...</div>;
     if (!currentUser) return <AuthScreen />;
-    if (!['approved', 'admin'].includes(accessState)) return <AccessStatusScreen state={accessState} user={currentUser} claims={claims} db={db} selfDeleteRequested={selfDeleteRequested} />;
+    if (!['approved', 'admin', 'legacy'].includes(accessState)) return <>
+        {accessState === 'legacy' && migrationPolicy && <LegacyMigrationNotice key={signInKey} user={currentUser} claims={claims} policy={migrationPolicy} signInKey={signInKey} onPolicyChange={setMigrationPolicy} />}
+        <AccessStatusScreen state={accessState} user={currentUser} claims={claims} db={db} selfDeleteRequested={selfDeleteRequested} />
+    </>;
     if (dataLoadErrorUid === effectiveUserId) return <div className="p-10 text-center">無法載入此帳號的資料，請重新整理或聯絡管理員。</div>;
     if (dataViewMode(effectiveUserId, loadedUserId, userId) === 'loading') return <div className="p-10 text-center">正在載入此帳號的資料…</div>;
 
@@ -1830,13 +1873,14 @@ const App = () => {
             case 'Library': return <ScreenContainer title="🏋️ 動作庫"><LibraryScreen weightHistory={weightHistory} movementDB={movementDB} db={db} APP_ID={APP_ID} userId={effectiveUserId} logDB={logDB} plansDB={plansDB} /></ScreenContainer>;
             case 'Menu': return <ScreenContainer title="📋 菜單"><MenuScreen setSelectedDailyPlanId={setSelectedDailyPlanId} selectedDailyPlanId={selectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} db={db} userId={effectiveUserId} APP_ID={APP_ID} setScreen={setScreen} currentLog={currentLog} setCurrentLog={setCurrentLog} /></ScreenContainer>;
             case 'Analysis': return <ScreenContainer title="📈 分析"><AnalysisScreen logDB={logDB} bodyMetricsDB={bodyMetricsDB} movementDB={movementDB} db={db} APP_ID={APP_ID} userId={effectiveUserId} /></ScreenContainer>;
-            case 'Profile': return <ScreenContainer title="👤 個人"><ProfileScreen bodyMetricsDB={bodyMetricsDB} userId={userId} db={db} APP_ID={APP_ID} logDB={logDB} auth={auth} isAdmin={isAdmin} onDeletionStaged={onDeletionStaged} /></ScreenContainer>;
+            case 'Profile': return <ScreenContainer title="👤 個人"><ProfileScreen bodyMetricsDB={bodyMetricsDB} userId={userId} db={db} APP_ID={APP_ID} logDB={logDB} auth={auth} isAdmin={isAdmin || accessState === 'legacy'} onDeletionStaged={onDeletionStaged} /></ScreenContainer>;
             default: return <ScreenContainer title="✍️ 紀錄"><LogScreen selectedDailyPlanId={selectedDailyPlanId} setSelectedDailyPlanId={setSelectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} weightHistory={weightHistory} db={db} userId={effectiveUserId} APP_ID={APP_ID} setScreen={setScreen} currentLog={currentLog} setCurrentLog={setCurrentLog} /></ScreenContainer>;
         }
     };
 
     return (
         <div className="h-screen font-sans bg-gray-50 flex flex-col">
+            {migrationPolicy && <LegacyMigrationNotice key={signInKey} user={currentUser} claims={claims} policy={migrationPolicy} signInKey={signInKey} onPolicyChange={setMigrationPolicy} />}
             {isAdmin && adminViewUser && (
                 <div className="bg-indigo-600 text-white px-4 py-2 text-xs flex justify-between items-center z-50">
                     <div>

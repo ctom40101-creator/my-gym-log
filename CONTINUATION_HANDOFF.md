@@ -1,4 +1,23 @@
-# My Gym Log Security Hardening V1 — Candidate Handoff
+# My Gym Log Security Hardening V1 — Candidate B continuation
+
+Current Gate: `SECURITY_HARDENING_FINAL_RELEASE_HUMAN_GATE` (OPEN). Owner approved `LEGACY_ACCOUNT_SUNSET_2026` as Candidate B scope. The frozen Candidate A remains `d098f9048d0b2b362cca4c061cc449d08c19105c`; Candidate B branch `security-hardening-v1-legacy-sunset-2026` starts exactly there. Candidate B is **NOT FROZEN** while the checks below remain open. Production, `main`, Rules, Auth, emails, Firestore, and Workers traffic were not changed.
+
+## Candidate B implementation and evidence
+
+- The branch adds E2/E3-only migration policy, same-UID Google link flow, persistent notice, Firebase password reset entry, deadline enforcement, and separate Free-plan retention Worker. Exact target UID/email mapping remains only in protected local evidence; source and Product Mother must use E2/E3 aliases only.
+- Run `npm test`, `npm run lint`, `npm run build`, `npm run test:rules`, and `npm exec --yes --package=wrangler@4.137.0 -- wrangler deploy --dry-run --config retention/wrangler.jsonc --outdir retention/.dry-run` afresh before any freeze. The latest local unit result was 75/75 PASS; lint, build, and Worker dry-run PASS. Those results do not replace emulator evidence.
+- Firestore emulator is blocked in this packaged Windows Java environment by `java.io.IOException: Unable to establish loopback connection` at `sun.nio.ch.UnixDomainSockets.connect0`; Rules tests have not run for Candidate B. Run the emulator suite in a normal host PowerShell or an approved isolated CI runner and capture its actual result. A Rules failure is a Candidate B blocker.
+- Retention Auth lookup intentionally fails closed if `providerUserInfo` is absent or malformed. Fresh read-only Production preflight for actual E2/E3 password-only lookup response shape is required. If the API omits the empty array, keep deletion stopped and separately review the normalization contract before freeze.
+- Independent security review initially found lock ownership, deadline renewal, browser data visibility, URL encoding, Rules completion, and malformed-provider gaps. Fixes were made and local unit/lint/build/dry-run checks rerun; request a final read-only security review after emulator and Auth response verification.
+- Review `docs/security-hardening-v1/LEGACY_ACCOUNT_SUNSET_2026_DESIGN.md`, `_CUTOVER.md`, `_IAM.md`, and `_ROLLBACK.md`. The Final Release Gate still needs an exact frozen B SHA, Rules/Worker hashes, protected E2/E3 status, zero-cost readback, and explicit Owner approval before any Production side effect.
+
+## Copyable Candidate B continuation command
+
+> 接續 My Gym Log Security Hardening V1 Candidate B `LEGACY_ACCOUNT_SUNSET_2026`。先讀本 Handoff、Candidate B 設計／Cutover／IAM／Rollback 與正式 Product Mother，核對 Candidate B branch 的 parent 必須是 frozen Candidate A `d098f9048d0b2b362cca4c061cc449d08c19105c`，main／Production 不變。完成尚未通過的 Firestore emulator 規則測試、E2/E3 Auth provider 回應唯讀預檢、最終安全審查與所有 fresh checks；全部 PASS 才能 freeze B 並提交 exact SHA、hash、runbook 至 Final Release Human Gate。未得新的 Final Release 授權，不得 merge、部署、寄信、連結／刪除 Production 帳號或啟動 Cron。
+
+---
+
+## Frozen Candidate A historical handoff
 
 Current Gate: `SECURITY_HARDENING_FINAL_RELEASE_HUMAN_GATE` (OPEN). This is a continuation of the Owner-approved Zero-Cost execution, not a new Gate. The candidate is the latest verified `origin/security-hardening-v1` HEAD; read its exact SHA fresh before any next action.
 

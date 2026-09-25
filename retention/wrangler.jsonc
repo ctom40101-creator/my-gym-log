@@ -1,0 +1,16 @@
+{
+  "name": "my-gym-log-retention",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-25",
+  "workers_dev": false,
+  "triggers": {
+    "crons": ["15 * * * *"]
+  },
+  "vars": {
+    "FIREBASE_PROJECT_ID": "mygymlog-604bc",
+    "APP_ID": "mygymlog-604bc"
+  },
+  "secrets": {
+    "required": ["SERVICE_ACCOUNT_JSON"]
+  }
+}

@@ -11,6 +11,9 @@ node_modules
 dist
 dist-ssr
 worker/.dist
+retention/.dry-run/
+retention/.wrangler/
+retention/retention/
 .wrangler
 *.local
 
