@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { migrationNoticeModel, runLegacyMigration, resetActionSettings } from '../src/services/legacyMigration.js';
+import { migrationNoticeModel, runLegacyMigration, resetActionSettings,
+  verifyGoogleCompletion } from '../src/services/legacyMigration.js';
 
 const uid = 'fixture-original-uid';
 const policy = { program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort: 'E2', originalUid: uid,
@@ -28,6 +29,19 @@ test('migrated target, Owner and ordinary Google user see no sunset notice', () 
 
 test('reset action uses only the production migration continue URL', () => {
   assert.deepEqual(resetActionSettings(), { url: 'https://my-gym-log.onrender.com/?legacyMigration=1', handleCodeInApp: false });
+});
+
+test('client completion verifier requires original UID, verified Google token and unchanged data', () => {
+  const data = { LogDB: ['log'], PlansDB: ['plan'], Settings: ['profile'], MovementDB: [], BodyMetricsDB: [] };
+  const claims = { sub: uid, email: passwordUser.email, email_verified: true,
+    firebase: { sign_in_provider: 'google.com' } };
+  assert.doesNotThrow(() => verifyGoogleCompletion(linkedUser, claims, uid, passwordUser.email, data, data));
+  assert.throws(() => verifyGoogleCompletion({ ...linkedUser, uid: 'new-uid' }, claims,
+    uid, passwordUser.email, data, data), /uid_mismatch/);
+  assert.throws(() => verifyGoogleCompletion(linkedUser, { ...claims, email_verified: false },
+    uid, passwordUser.email, data, data), /google_token_mismatch/);
+  assert.throws(() => verifyGoogleCompletion(linkedUser, claims,
+    uid, passwordUser.email, data, { ...data, PlansDB: [] }), /private_data_mismatch/);
 });
 
 test('migration links Google to current user, verifies data and UID, then unlinks password', async () => {

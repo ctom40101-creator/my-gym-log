@@ -4,7 +4,7 @@ import { collection, doc, getDoc, getDocs, runTransaction, Timestamp, updateDoc 
 import { auth, db } from '../firebase';
 import { APP_ID } from '../constants';
 import { DEADLINE_MS, isLegacyTargetPolicy } from './legacyMigrationPolicy';
-import { resetActionSettings, verifyLegacySnapshot, verifyLinked } from './legacyMigration';
+import { resetActionSettings, verifyGoogleCompletion, verifyLegacySnapshot, verifyLinked } from './legacyMigration';
 
 const provider = new GoogleAuthProvider();
 provider.setCustomParameters({ prompt: 'select_account' });
@@ -81,15 +81,11 @@ export async function finishLegacyGoogleMigration(user) {
   if (!isLegacyTargetPolicy(policy, user.uid) || policy.state !== 'GOOGLE_LINKED_VERIFYING') {
     throw new Error('legacy_policy_mismatch');
   }
-  verifyLinked(user, user.uid, user.email);
   const token = await user.getIdTokenResult(true);
-  if (token.claims?.sub !== user.uid || token.claims.email?.toLowerCase() !== user.email.toLowerCase()
-    || token.claims.email_verified !== true || token.claims.firebase?.sign_in_provider !== 'google.com') {
-    throw new Error('google_token_mismatch');
-  }
   const baseline = readLegacyProgress(user.uid);
   if (!baseline) throw new Error('baseline_unavailable');
-  verifyLegacySnapshot(baseline, await snapshotLegacyData(user.uid));
+  verifyGoogleCompletion(user, token.claims, user.uid, user.email,
+    baseline, await snapshotLegacyData(user.uid));
   if (user.providerData?.some(item => item.providerId === 'password')) await unlink(user, 'password');
   await updateDoc(doc(db, 'MigrationPolicies', user.uid), { state: 'MIGRATED_GOOGLE_ONLY' });
   sessionStorage.removeItem(progressKey(user.uid));

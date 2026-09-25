@@ -35,6 +35,15 @@ export function verifyLegacySnapshot(before, after) {
   }
 }
 
+export function verifyGoogleCompletion(user, token, uid, email, before, after) {
+  verifyLinked(user, uid, email);
+  if (token?.sub !== uid || token.email?.toLowerCase() !== email.toLowerCase()
+    || token.email_verified !== true || token.firebase?.sign_in_provider !== 'google.com') {
+    throw new Error('google_token_mismatch');
+  }
+  verifyLegacySnapshot(before, after);
+}
+
 export async function runLegacyMigration({ user, policy, operations }) {
   const uid = user?.uid;
   if (!isLegacyTargetPolicy(policy, uid) || user.email === 'ctom40101@gmail.com'
@@ -47,13 +56,8 @@ export async function runLegacyMigration({ user, policy, operations }) {
   verifyLinked(linked, uid, user.email);
   verifyLegacySnapshot(baseline, await operations.snapshot(uid));
   const googleUser = await operations.googleSignIn();
-  verifyLinked(googleUser, uid, user.email);
   const token = await operations.freshGoogleToken(googleUser);
-  if (token?.sub !== uid || token.email?.toLowerCase() !== user.email.toLowerCase()
-    || token.email_verified !== true || token.firebase?.sign_in_provider !== 'google.com') {
-    throw new Error('google_token_mismatch');
-  }
-  verifyLegacySnapshot(baseline, await operations.snapshot(uid));
+  verifyGoogleCompletion(googleUser, token, uid, user.email, baseline, await operations.snapshot(uid));
   await operations.unlinkPassword(googleUser);
   await operations.complete(uid);
   return { uid, state: 'MIGRATED_GOOGLE_ONLY' };

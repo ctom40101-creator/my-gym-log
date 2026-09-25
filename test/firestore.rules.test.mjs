@@ -73,6 +73,22 @@ test('password target can acquire verifying intent but cannot claim migrated sta
   }));
   await assertFails(updateDoc(ref(legacy, policyPath('legacy-uid')), { state: 'MIGRATED_GOOGLE_ONLY' }));
   await assertFails(updateDoc(ref(legacy, policyPath('legacy-uid')), { deletionHold: false, cohort: 'E1' }));
+  await assertFails(updateDoc(ref(legacy, policyPath('legacy-uid')), {
+    intentExpiresAt: new Date('2027-01-01T00:00:00Z'),
+  }));
+});
+
+test('only verified same-UID Google session may complete legacy policy', async () => {
+  await legacyPolicy('legacy-uid');
+  await seed(policyPath('legacy-uid'), {
+    program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort: 'E2', originalUid: 'legacy-uid',
+    deadlineAt: '2026-12-31T15:59:59Z', state: 'GOOGLE_LINKED_VERIFYING',
+    deletionHold: false, intentExpiresAt: new Date('2026-12-31T15:59:59Z'),
+  });
+  const verified = env.authenticatedContext('legacy-uid', token('legacy@example.test', true));
+  const unverified = env.authenticatedContext('legacy-uid', token('legacy@example.test', false));
+  await assertFails(updateDoc(ref(unverified, policyPath('legacy-uid')), { state: 'MIGRATED_GOOGLE_ONLY' }));
+  await assertSucceeds(updateDoc(ref(verified, policyPath('legacy-uid')), { state: 'MIGRATED_GOOGLE_ONLY' }));
 });
 
 test('general Google and Owner users cannot enter legacy sunset policy', async () => {
