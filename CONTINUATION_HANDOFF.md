@@ -1,3 +1,19 @@
+# My Gym Log Security Hardening V1 — Candidate C KEEP_ONLY_LOUIS continuation
+
+This section supersedes earlier E1/E2/E3/Anonymous preservation instructions below. Current Gate: `SECURITY_HARDENING_FINAL_RELEASE_HUMAN_GATE = OPEN`. Read Candidate C exact local HEAD and parent fresh; parent must be frozen Candidate B `998e9e39c9fc4159d681da5be0c91b282c05ae92`. Frozen Candidate B and remote `main` `69823504dd6424fc12568d95fc56046e90e35939` must remain unchanged. Candidate C was created only because Candidate B's client, Rules and Worker contract cannot support the one protected alias without code changes.
+
+Owner policy is `LEGACY_ACCOUNT_POLICY=KEEP_ONLY_LOUIS`; public code uses `LEGACY_MIGRATION_KEEP_01` only. Exact email/UID mapping, deletion manifest, journal, rollback snapshot and postcheck stay in protected `%LOCALAPPDATA%/MyGymLogPrecheck/` evidence. The protected account is not permanent allowlist: same-UID Google migration by `2026-12-31 23:59:59 Asia/Taipei` cancels deletion eligibility; otherwise retention may begin at `2027-01-01 00:15 Asia/Taipei` after the authorized release.
+
+Under separate Owner authorization, one-time Production cleanup completed 184/184 exact retired legacy targets: 53 with data and 131 Auth-only. Independent read-back found zero target Auth, zero target-owned/nested Firestore documents, 184 minimal receipts, no leftover cleanup lock, unchanged protected-account data and unchanged shared public MovementDB. Owner's one document value change predates the cleanup; Owner Auth and path set remained stable. One additional password identity is unclassified, excluded and untouched. The pre-cleanup 796-document snapshot remains a bounded rollback artifact with hard purge by 2026-10-26 19:16:15 Asia/Taipei; no Vault copy was made.
+
+Candidate C unit 93/93, Rules emulator 27/27, Worker 30/30, lint, build and Wrangler 4.137.0 dry run passed. Read [Candidate C design](docs/security-hardening-v1/KEEP_ONLY_LOUIS_CANDIDATE_C_DESIGN.md), [Cutover](docs/security-hardening-v1/KEEP_ONLY_LOUIS_CANDIDATE_C_CUTOVER.md), [Rollback](docs/security-hardening-v1/KEEP_ONLY_LOUIS_CANDIDATE_C_ROLLBACK.md), [IAM](docs/security-hardening-v1/KEEP_ONLY_LOUIS_CANDIDATE_C_IAM.md), and [Test Record](docs/security-hardening-v1/KEEP_ONLY_LOUIS_CANDIDATE_C_TEST_RECORD.md). Formal Product Mother must be read and brought into sync before any release decision.
+
+Final Release readiness cannot claim `NO_VALID_USER_LOCKOUT` until the unclassified password account is classified. No Candidate C Production deploy, Rules publish, provider link/unlink, migration email, Cron activation, paid upgrade or `main` merge is authorized. The separately authorized retired-cohort cleanup does not authorize Production cutover.
+
+Copyable continuation: 接續 My Gym Log Candidate C `KEEP_ONLY_LOUIS`。先讀此 Handoff、Candidate C Design/Cutover/Rollback/IAM/Test Record 與正式 Product Mother；fresh read Candidate C exact SHA、Candidate B parent、remote main、Production app/Rules/Worker、Spark/Workers Free。受保護清理名冊已逐 UID 完成 184/184，留有 1 個未分類 password 帳號例外；先核對該帳號的有效使用者分類與 Product Mother 同步，再做 Final Release Readiness。維持 `SECURITY_HARDENING_FINAL_RELEASE_HUMAN_GATE=OPEN`；不得因清理完成而部署或啟動 Cron。
+
+---
+
 # My Gym Log Security Hardening V1 — Candidate B continuation
 
 Current Gate: `SECURITY_HARDENING_FINAL_RELEASE_HUMAN_GATE` (OPEN). Owner approved `LEGACY_ACCOUNT_SUNSET_2026` as Candidate B scope. The frozen Candidate A remains `d098f9048d0b2b362cca4c061cc449d08c19105c`; Candidate B branch `security-hardening-v1-legacy-sunset-2026` starts exactly there. The verified Candidate B freeze is this handoff's committed HEAD; read its exact SHA and integrity evidence from Git and the formal Product Mother. Production, `main`, Rules, Auth, emails, Firestore, and Workers traffic were not changed.

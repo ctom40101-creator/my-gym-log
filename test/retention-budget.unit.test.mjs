@@ -7,7 +7,7 @@ import { FIRST_DELETION_MS } from '../src/services/legacyMigrationPolicy.js';
 const ok = (data, status = 200) => new Response(JSON.stringify(data), { status });
 const project = 'demo-project';
 const base = `projects/${project}/databases/(default)/documents`;
-const privateRoot = 'artifacts/demo-project/users/fixture-e2';
+const privateRoot = 'artifacts/demo-project/users/fixture-protected';
 
 test('full successful retention pass remains below Workers Free subrequest ceiling', async () => {
   let calls = 0;
@@ -32,9 +32,9 @@ test('full successful retention pass remains below Workers Free subrequest ceili
     const url = String(input);
     if (url.endsWith('/SecurityConfig/owner')) return ok({ fields: { uid: { stringValue: 'owner-uid' } } });
     if (url.includes('/MigrationPolicies?pageSize=')) return ok({ documents: [
-      policy('fixture-e2', 'E2'), policy('fixture-e3', 'E3', 'DELETION_HOLD'),
+      policy('fixture-protected', 'LEGACY_MIGRATION_KEEP_01'),
     ] });
-    if (url.endsWith('/MigrationPolicies/fixture-e2')) return ok(policy('fixture-e2', 'E2'));
+    if (url.endsWith('/MigrationPolicies/fixture-protected')) return ok(policy('fixture-protected', 'LEGACY_MIGRATION_KEEP_01'));
     if (url.endsWith('documents:commit')) {
       const write = JSON.parse(init.body).writes[0];
       if (write.update.fields.state) state = write.update.fields.state.stringValue;
@@ -43,11 +43,11 @@ test('full successful retention pass remains below Workers Free subrequest ceili
       return ok({ writeResults: [{}] });
     }
     if (url.endsWith('accounts:lookup')) return ok(authExists ? { users: [{
-      localId: 'fixture-e2', email: 'fixture@example.test', providerUserInfo: [], disabled,
+      localId: 'fixture-protected', email: 'fixture@example.test', providerUserInfo: [], disabled,
     }] } : {});
     if (url.endsWith('accounts:update')) { disabled = JSON.parse(init.body).disableUser; return ok({}); }
     if (url.endsWith('accounts:delete')) { authExists = false; return ok({}); }
-    if (url.endsWith('/RetentionJobs/fixture-e2')) return ok({}, 404);
+    if (url.endsWith('/RetentionJobs/fixture-protected')) return ok({}, 404);
     if (url.includes(':listCollectionIds')) return ok({ collectionIds:
       url.endsWith(`${privateRoot}:listCollectionIds`) && privateExists ? ['LogDB'] : [],
     });
@@ -59,10 +59,10 @@ test('full successful retention pass remains below Workers Free subrequest ceili
       return ok({ name: `${base}/${privateRoot}/LogDB/log`, updateTime });
     }
     if (url.endsWith(`/${privateRoot}`)) return ok({}, 404);
-    if (url.endsWith('/DeletionReceipts/fixture-e2')) return ok(receiptExists ? { fields: {
-      program: { stringValue: 'LEGACY_ACCOUNT_SUNSET_2026' }, cohort: { stringValue: 'E2' },
+    if (url.endsWith('/DeletionReceipts/fixture-protected')) return ok(receiptExists ? { fields: {
+      program: { stringValue: 'LEGACY_ACCOUNT_SUNSET_2026' }, cohort: { stringValue: 'LEGACY_MIGRATION_KEEP_01' },
     } } : {}, receiptExists ? 200 : 404);
-    if (url.includes('/DeletionReceipts/fixture-e2?') && init.method === 'PATCH') {
+    if (url.includes('/DeletionReceipts/fixture-protected?') && init.method === 'PATCH') {
       receiptExists = true; return ok({});
     }
     if (init.method === 'DELETE') return ok({}, 404);

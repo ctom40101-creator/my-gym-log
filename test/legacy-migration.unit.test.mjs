@@ -4,7 +4,7 @@ import { migrationNoticeModel, runLegacyMigration, resetActionSettings,
   verifyGoogleCompletion, verifyLinked, linkedGoogleNextStep, verifyPostLinkSnapshot } from '../src/services/legacyMigration.js';
 
 const uid = 'fixture-original-uid';
-const policy = { program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort: 'E2', originalUid: uid,
+const policy = { program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort: 'LEGACY_MIGRATION_KEEP_01', originalUid: uid,
   deadlineAt: '2026-12-31T15:59:59Z', state: 'LEGACY_PASSWORD_PENDING', deletionHold: false };
 const passwordUser = { uid, email: 'fixture@example.test', providerData: [{ providerId: 'password' }] };
 const linkedUser = { ...passwordUser, providerData: [{ providerId: 'password' }, { providerId: 'google.com', email: passwordUser.email }] };

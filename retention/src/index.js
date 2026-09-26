@@ -35,7 +35,7 @@ export function createScheduledWorker({ getToken = serviceAccountToken, makeApi 
         const now = controller?.scheduledTime;
         if (!Number.isFinite(now)) throw new Error('scheduled_time_invalid');
         if (now < FIRST_DELETION_MS) return;
-        const cohort = { '15 * * * *': 'E2', '30 * * * *': 'E3' }[controller?.cron];
+        const cohort = { '15 * * * *': 'LEGACY_MIGRATION_KEEP_01' }[controller?.cron];
         if (!cohort) return;
         const token = await getToken(env, fetchImpl);
         const api = makeApi(env, token, fetchImpl);

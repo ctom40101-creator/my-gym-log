@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { runRetention } from '../retention/src/retention.js';
 import { FIRST_DELETION_MS } from '../src/services/legacyMigrationPolicy.js';
 
-const uid = 'fixture-e2-uid';
-const policy = { program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort: 'E2', originalUid: uid,
+const uid = 'fixture-protected-uid';
+const policy = { program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort: 'LEGACY_MIGRATION_KEEP_01', originalUid: uid,
   deadlineAt: '2026-12-31T15:59:59Z', state: 'LEGACY_PASSWORD_PENDING', deletionHold: false };
 const auth = { localId: uid, email: 'fixture@example.test', providerUserInfo: [], disabled: false };
 
@@ -122,24 +122,11 @@ test('Google link detected during a private cleanup batch restores Auth and stop
   assert.deepEqual(f.calls, ['lock', 'check-lock', 'disable', 'check-lock', 'private', 'restore', 'cancel']);
 });
 
-test('E3 window proceeds despite E2 needing many cleanup passes', async () => {
-  const e3Uid = 'fixture-e3-uid';
-  const f = fixture({
-    listTargets: async () => [
-      { uid, policy, updateTime: 'v1' },
-      { uid: e3Uid, policy: { ...policy, cohort: 'E3', originalUid: e3Uid }, updateTime: 'v1' },
-    ],
-    getPolicy: async targetUid => ({ policy: { ...policy, cohort: targetUid === e3Uid ? 'E3' : 'E2', originalUid: targetUid }, updateTime: 'v1' }),
-    getAuth: async targetUid => ({ ...auth, localId: targetUid }),
-    deletePrivateRecursively: async targetUid => {
-      f.calls.push(`private:${targetUid}`);
-      return { complete: false };
-    },
-  });
-  const result = await runRetention(f.api, FIRST_DELETION_MS + 15 * 60_000, 'E3');
-  assert.equal(result.deferred, 1);
-  assert.equal(f.calls.includes(`private:${uid}`), false);
-  assert.equal(f.calls.includes(`private:${e3Uid}`), true);
+test('obsolete cohort selection cannot process the protected target', async () => {
+  const f = fixture();
+  const result = await runRetention(f.api, FIRST_DELETION_MS, 'E3');
+  assert.equal(result.examined, 0);
+  assert.deepEqual(f.calls, []);
 });
 
 test('Google linkage before metadata deletion restores Auth and stops subsequent cleanup', async () => {

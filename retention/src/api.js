@@ -97,14 +97,14 @@ export function createRetentionApi(env, token, fetchImpl = fetch) {
       const url = new URL(docUrl('MigrationPolicies'));
       url.searchParams.set('pageSize', '100');
       const { body } = await request(url.toString());
-      if (body.nextPageToken || !Array.isArray(body.documents) || body.documents.length !== 2) throw new Error('roster_ambiguous');
+      if (body.nextPageToken || !Array.isArray(body.documents) || body.documents.length !== 1) throw new Error('roster_ambiguous');
       const rows = body.documents.map(document => {
         const uid = document.name?.split('/').at(-1);
         const policy = decodePolicy(document);
         if (!isLegacyTargetPolicy(policy, uid) || !document.updateTime) throw new Error('roster_ambiguous');
         return { uid, policy, updateTime: document.updateTime };
       });
-      if (new Set(rows.map(row => row.uid)).size !== 2 || new Set(rows.map(row => row.policy.cohort)).size !== 2) {
+      if (new Set(rows.map(row => row.uid)).size !== 1 || rows[0].policy.cohort !== 'LEGACY_MIGRATION_KEEP_01') {
         throw new Error('roster_ambiguous');
       }
       return rows;

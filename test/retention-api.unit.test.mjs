@@ -32,8 +32,8 @@ test('Auth lookup rejects malformed provider rows', async () => {
   await assert.rejects(api.getAuth('fixture-uid'), /auth_provider_ambiguous/);
 });
 
-test('roster requires exactly E2 and E3 and never contains public source identities', async () => {
-  const rows = ['E2', 'E3'].map((cohort, index) => ({
+test('roster requires exactly one protected policy and never contains public source identities', async () => {
+  const rows = ['LEGACY_MIGRATION_KEEP_01'].map((cohort, index) => ({
     name: `projects/demo-project/databases/(default)/documents/MigrationPolicies/fixture-${index}`,
     updateTime: '2026-09-25T00:00:00Z',
     fields: { program: { stringValue: 'LEGACY_ACCOUNT_SUNSET_2026' }, cohort: { stringValue: cohort },
@@ -41,7 +41,7 @@ test('roster requires exactly E2 and E3 and never contains public source identit
       state: { stringValue: 'LEGACY_PASSWORD_PENDING' }, deletionHold: { booleanValue: false } },
   }));
   const api = createRetentionApi(config, 'fixture-token', async () => response({ documents: rows }));
-  assert.equal((await api.listTargets()).length, 2);
+  assert.equal((await api.listTargets()).length, 1);
   const extra = createRetentionApi(config, 'fixture-token', async () => response({ documents: [...rows, rows[0]] }));
   await assert.rejects(extra.listTargets(), /roster_ambiguous/);
 });

@@ -37,7 +37,7 @@ async function seed(path, data) {
 async function access(uid, status) {
   await seed(requestPath(uid), { uid, email: `${uid}@example.test`, displayName: uid, status, requestedAt: new Date() });
 }
-async function legacyPolicy(uid, cohort = 'E2') {
+async function legacyPolicy(uid, cohort = 'LEGACY_MIGRATION_KEEP_01') {
   await seed(policyPath(uid), { program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort, originalUid: uid,
     deadlineAt: '2026-12-31T15:59:59Z', state: 'LEGACY_PASSWORD_PENDING', deletionHold: false });
 }
@@ -54,7 +54,7 @@ beforeEach(async () => {
 });
 after(async () => env?.cleanup());
 
-test('only rostered E2/E3 password UID reads its policy and own data before deadline', async () => {
+test('only protected rostered password UID reads its policy and own data before deadline', async () => {
   const legacy = env.authenticatedContext('legacy-uid', token('legacy@example.test', false, 'password'));
   const otherPassword = env.authenticatedContext('other-password', token('other@example.test', false, 'password'));
   await legacyPolicy('legacy-uid');
@@ -63,6 +63,17 @@ test('only rostered E2/E3 password UID reads its policy and own data before dead
   await assertFails(getDoc(ref(otherPassword, policyPath('legacy-uid'))));
   await assertSucceeds(getDoc(ref(legacy, privatePath('legacy-uid'))));
   await assertFails(getDoc(ref(otherPassword, privatePath('legacy-uid'))));
+});
+
+test('retired E2 and E3 cohorts cannot read migration policy or private data', async () => {
+  for (const cohort of ['E2', 'E3']) {
+    const uid = `retired-${cohort}`;
+    const legacy = env.authenticatedContext(uid, token('retired@example.test', false, 'password'));
+    await legacyPolicy(uid, cohort);
+    await seed(privatePath(uid), { nickname: 'private' });
+    await assertFails(getDoc(ref(legacy, policyPath(uid))));
+    await assertFails(getDoc(ref(legacy, privatePath(uid))));
+  }
 });
 
 test('password target can acquire verifying intent but cannot claim migrated state', async () => {
@@ -81,7 +92,7 @@ test('password target can acquire verifying intent but cannot claim migrated sta
 test('only verified same-UID Google session may complete legacy policy', async () => {
   await legacyPolicy('legacy-uid');
   await seed(policyPath('legacy-uid'), {
-    program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort: 'E2', originalUid: 'legacy-uid',
+    program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort: 'LEGACY_MIGRATION_KEEP_01', originalUid: 'legacy-uid',
     deadlineAt: '2026-12-31T15:59:59Z', state: 'GOOGLE_LINKED_VERIFYING',
     deletionHold: false, intentExpiresAt: new Date('2026-12-31T15:59:59Z'),
   });
@@ -96,7 +107,7 @@ test('general Google and Owner users cannot enter legacy sunset policy', async (
   await legacyPolicy('legacy-uid');
   await assertFails(getDoc(ref(c.approved, policyPath('legacy-uid'))));
   await assertFails(setDoc(ref(c.owner, policyPath('owner-uid')), {
-    program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort: 'E2', originalUid: 'owner-uid',
+    program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort: 'LEGACY_MIGRATION_KEEP_01', originalUid: 'owner-uid',
     deadlineAt: '2026-12-31T15:59:59Z', state: 'LEGACY_PASSWORD_PENDING', deletionHold: false,
   }));
 });

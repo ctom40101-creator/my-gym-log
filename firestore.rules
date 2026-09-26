@@ -25,7 +25,7 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/MigrationPolicies/$(uid))
         && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.program == 'LEGACY_ACCOUNT_SUNSET_2026'
         && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.originalUid == uid
-        && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.cohort in ['E2', 'E3']
+        && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.cohort == 'LEGACY_MIGRATION_KEEP_01'
         && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.deadlineAt == '2026-12-31T15:59:59Z'
         && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.deletionHold == false;
     }
@@ -42,7 +42,7 @@ service cloud.firestore {
       allow get: if isAdmin() || (request.auth != null && request.auth.uid == uid
         && request.auth.token.email != 'ctom40101@gmail.com'
         && resource.data.program == 'LEGACY_ACCOUNT_SUNSET_2026'
-        && resource.data.originalUid == uid && resource.data.cohort in ['E2', 'E3']);
+        && resource.data.originalUid == uid && resource.data.cohort == 'LEGACY_MIGRATION_KEEP_01');
       allow update: if legacyTarget(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'intentExpiresAt'])
         && ((request.auth.token.firebase.sign_in_provider == 'password'

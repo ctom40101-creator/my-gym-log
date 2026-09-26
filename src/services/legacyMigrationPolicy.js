@@ -9,7 +9,7 @@ export const LEGACY_STATES = Object.freeze([
 
 export function isLegacyTargetPolicy(policy, uid, ownerUid) {
   return !!uid && (!ownerUid || uid !== ownerUid) && policy?.program === PROGRAM
-    && (policy.cohort === 'E2' || policy.cohort === 'E3')
+    && policy.cohort === 'LEGACY_MIGRATION_KEEP_01'
     && policy.originalUid === uid && policy.deadlineAt === DEADLINE_ISO
     && LEGACY_STATES.includes(policy.state) && typeof policy.deletionHold === 'boolean';
 }

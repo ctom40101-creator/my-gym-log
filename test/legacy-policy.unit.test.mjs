@@ -6,9 +6,9 @@ import {
   evaluateDeletion,
 } from '../src/services/legacyMigrationPolicy.js';
 
-const uid = 'e2-fixture-uid';
+const uid = 'protected-fixture-uid';
 const ownerUid = 'owner-fixture-uid';
-const policy = { program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort: 'E2', originalUid: uid,
+const policy = { program: 'LEGACY_ACCOUNT_SUNSET_2026', cohort: 'LEGACY_MIGRATION_KEEP_01', originalUid: uid,
   deadlineAt: '2026-12-31T15:59:59Z', state: 'LEGACY_PASSWORD_PENDING', deletionHold: false };
 const auth = { localId: uid, providerUserInfo: [{ providerId: 'password' }], disabled: false };
 
@@ -19,10 +19,9 @@ test('deadline uses the exact Taipei instant and first deletion window is 00:15 
   assert.equal(evaluateDeletion({ policy, auth, uid, ownerUid, now: FIRST_DELETION_MS }).eligible, true);
 });
 
-test('policy contract accepts only exact E2/E3 roster documents and excludes Owner', () => {
+test('policy contract accepts only protected roster document and excludes Owner', () => {
   assert.equal(isLegacyTargetPolicy(policy, uid, ownerUid), true);
-  assert.equal(isLegacyTargetPolicy({ ...policy, cohort: 'E3' }, uid, ownerUid), true);
-  for (const bad of [{ ...policy, cohort: 'E1' }, { ...policy, originalUid: 'different' },
+  for (const bad of [{ ...policy, cohort: 'E1' }, { ...policy, cohort: 'E2' }, { ...policy, cohort: 'E3' }, { ...policy, originalUid: 'different' },
     { ...policy, program: 'other' }, { ...policy, deadlineAt: '2027-01-01T00:00:00Z' }]) {
     assert.equal(isLegacyTargetPolicy(bad, uid, ownerUid), false);
   }
