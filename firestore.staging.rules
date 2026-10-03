@@ -1,0 +1,173 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedInWithGoogle() {
+      return request.auth != null
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+
+    function isAdmin() {
+      return signedInWithGoogle()
+        && request.auth.token.email == 'ctom40101@gmail.com'
+        && exists(/databases/$(database)/documents/SecurityConfig/owner)
+        && get(/databases/$(database)/documents/SecurityConfig/owner).data.uid == request.auth.uid;
+    }
+
+    function legacyTarget(uid) {
+      return request.auth != null
+        && request.auth.uid == uid
+        && request.auth.token.email != 'ctom40101@gmail.com'
+        && exists(/databases/$(database)/documents/SecurityConfig/owner)
+        && get(/databases/$(database)/documents/SecurityConfig/owner).data.uid != uid
+        && exists(/databases/$(database)/documents/MigrationPolicies/$(uid))
+        && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.program == 'LEGACY_ACCOUNT_SUNSET_2026'
+        && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.originalUid == uid
+        && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.cohort == 'LEGACY_MIGRATION_KEEP_01'
+        && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.deadlineAt == '2026-12-31T15:59:59Z'
+        && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.deletionHold == false;
+    }
+
+    function legacyPasswordAccess(uid) {
+      return legacyTarget(uid)
+        && request.auth.token.firebase.sign_in_provider == 'password'
+        && request.time <= timestamp.value('2026-12-31T15:59:59Z')
+        && get(/databases/$(database)/documents/MigrationPolicies/$(uid)).data.state
+          in ['LEGACY_PASSWORD_PENDING', 'GOOGLE_LINKED_VERIFYING'];
+    }
+
+    match /MigrationPolicies/{uid} {
+      allow get: if isAdmin() || (request.auth != null && request.auth.uid == uid
+        && request.auth.token.email != 'ctom40101@gmail.com'
+        && resource.data.program == 'LEGACY_ACCOUNT_SUNSET_2026'
+        && resource.data.originalUid == uid && resource.data.cohort == 'LEGACY_MIGRATION_KEEP_01');
+      allow update: if legacyTarget(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'intentExpiresAt'])
+        && ((request.auth.token.firebase.sign_in_provider == 'password'
+          && request.time <= timestamp.value('2026-12-31T15:59:59Z')
+          && resource.data.state in ['LEGACY_PASSWORD_PENDING', 'GOOGLE_LINKED_VERIFYING']
+          && request.resource.data.state == 'GOOGLE_LINKED_VERIFYING'
+          && request.resource.data.intentExpiresAt is timestamp
+          && request.resource.data.intentExpiresAt > request.time
+          && request.resource.data.intentExpiresAt <= request.time + duration.value(15, 'm')
+          && request.resource.data.intentExpiresAt <= timestamp.value('2026-12-31T15:59:59Z'))
+        || (request.auth.token.firebase.sign_in_provider == 'google.com'
+          && request.auth.token.email_verified == true
+          && resource.data.state == 'GOOGLE_LINKED_VERIFYING'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state'])
+          && request.resource.data.state == 'MIGRATED_GOOGLE_ONLY'));
+    }
+
+    function isStagingOwnerCandidate() {
+      return signedInWithGoogle()
+        && request.auth.token.email == 'ctom40101@gmail.com';
+    }
+
+    match /SecurityConfig/owner {
+      allow get: if isAdmin() || isStagingOwnerCandidate();
+      allow create: if isStagingOwnerCandidate()
+        && !exists(/databases/$(database)/documents/SecurityConfig/owner)
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'environment'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.environment == 'staging';
+    }
+
+    // Only a privileged operator can issue this after a complete data inventory.
+    // The Worker reads it with the caller's Firebase ID token, not its service account.
+    match /DeletionClearances/{uid} {
+      allow get: if isAdmin() || (signedInWithGoogle() && request.auth.uid == uid);
+      allow delete: if isAdmin() && !existsAfter(/databases/$(database)/documents/AccessRequests/$(uid));
+    }
+
+    function approved(uid) {
+      return signedInWithGoogle()
+        && exists(/databases/$(database)/documents/AccessRequests/$(uid))
+        && get(/databases/$(database)/documents/AccessRequests/$(uid)).data.status == 'approved';
+    }
+
+    function canAccessUser(uid) {
+      return isAdmin() || (request.auth != null && request.auth.uid == uid
+        && (approved(uid) || legacyPasswordAccess(uid)));
+    }
+
+    match /AccessRequests/{uid} {
+      allow get: if isAdmin() || (signedInWithGoogle() && request.auth.uid == uid);
+      allow list: if isAdmin();
+      allow create: if signedInWithGoogle()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'displayName', 'status', 'requestedAt'])
+        && request.resource.data.keys().hasAll(['uid', 'email', 'displayName', 'status', 'requestedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.displayName is string
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requestedAt == request.time;
+      allow update: if isAdmin()
+        && !resource.data.keys().hasAny(['deletionStartedAt', 'selfDeleteRequestedAt'])
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.displayName == resource.data.displayName
+        && request.resource.data.requestedAt == resource.data.requestedAt
+        && request.resource.data.status in ['pending', 'approved', 'rejected', 'disabled']
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt', 'decidedBy', 'deletionStartedAt'])
+        && (!request.resource.data.keys().hasAny(['deletionStartedAt'])
+          || (request.resource.data.status == 'disabled' && request.resource.data.deletionStartedAt == request.time));
+      allow update: if signedInWithGoogle()
+        && request.auth.uid == uid
+        && request.auth.token.email == resource.data.email
+        && resource.data.status == 'approved'
+        && request.resource.data.status == 'disabled'
+        && request.resource.data.selfDeleteRequestedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'selfDeleteRequestedAt']);
+      allow delete: if isAdmin() && resource.data.status == 'disabled';
+    }
+
+    match /artifacts/{appId}/public/data/UserIndex/{uid} {
+      function identityIsValid() {
+        return request.resource.data.keys().hasOnly(['uid', 'email', 'isAnonymous', 'nickname', 'lastLogin'])
+          && request.resource.data.keys().hasAll(['uid', 'email', 'isAnonymous'])
+          && request.resource.data.uid == uid
+          && request.resource.data.isAnonymous == false;
+      }
+
+      allow get: if appId == 'mygymlog-604bc' && canAccessUser(uid);
+      allow list: if appId == 'mygymlog-604bc' && isAdmin();
+      allow create: if appId == 'mygymlog-604bc'
+        && request.auth != null
+        && request.auth.uid == uid
+        && (approved(uid) || isAdmin() || legacyPasswordAccess(uid))
+        && identityIsValid()
+        && request.resource.data.email == request.auth.token.email;
+      allow update: if appId == 'mygymlog-604bc'
+        && canAccessUser(uid)
+        && (approved(uid) || legacyPasswordAccess(uid) || (isAdmin() && request.auth.uid == uid))
+        && identityIsValid()
+        && resource.data.uid == uid
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.isAnonymous == resource.data.isAnonymous;
+      allow delete: if appId == 'mygymlog-604bc' && canAccessUser(uid);
+    }
+
+    match /artifacts/{appId}/users/{userId} {
+      allow get: if appId == 'mygymlog-604bc' && canAccessUser(userId);
+      allow delete: if appId == 'mygymlog-604bc' && canAccessUser(userId);
+    }
+
+    match /artifacts/{appId}/users/{userId}/{collectionName}/{documentId} {
+      function knownCollection() {
+        return collectionName in ['BodyMetricsDB', 'LogDB', 'MovementDB', 'PlansDB', 'Settings'];
+      }
+      allow read: if appId == 'mygymlog-604bc' && knownCollection() && canAccessUser(userId);
+      allow create, update: if appId == 'mygymlog-604bc' && knownCollection()
+        && canAccessUser(userId) && (approved(userId) || legacyPasswordAccess(userId)
+          || (isAdmin() && request.auth.uid == userId));
+      allow delete: if appId == 'mygymlog-604bc' && knownCollection() && canAccessUser(userId);
+    }
+  }
+}

@@ -23,6 +23,25 @@ export async function loadOriginalOwnerUid(db) {
   return snapshot.exists() ? snapshot.data().uid : null;
 }
 
+export async function bootstrapStagingOwnerConfig(db, user, claims, appEnvironment) {
+  if (appEnvironment !== 'staging') return null;
+  if (!user || claims?.email !== OWNER_EMAIL || claims.email_verified !== true
+    || claims.firebase?.sign_in_provider !== 'google.com') {
+    throw new Error('staging_owner_identity_invalid');
+  }
+
+  const ownerRef = doc(db, 'SecurityConfig', 'owner');
+  const snapshot = await getDoc(ownerRef);
+  if (snapshot.exists()) return snapshot.data().uid || null;
+
+  await setDoc(ownerRef, {
+    uid: user.uid,
+    email: claims.email,
+    environment: 'staging',
+  });
+  return user.uid;
+}
+
 export function observeAccessRequest(db, user, onChange, onError) {
   const path = doc(db, 'AccessRequests', user.uid);
   return onSnapshot(path, snapshot => onChange(snapshot.exists() ? snapshot.data() : null), onError);

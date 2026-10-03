@@ -21,7 +21,7 @@ const UID = 'uxr1-s1-emulator-member';
 const OTHER = 'uxr1-s1-emulator-other';
 // This is a document path contract in the existing rules, not a Firebase project.
 const logPath = uid => `artifacts/mygymlog-604bc/users/${uid}/LogDB`;
-const runtime = path.resolve('.runtime-uxr1-s1-emulator');
+const runtime = path.resolve(process.env.MGL_EMULATOR_EVIDENCE_DIR || '.runtime-uxr1-s1-emulator');
 const evidence = { projectId: PROJECT, host: HOST, port: PORT, sdkVersion: SDK_VERSION,
   runLabel: process.env.MGL_EMULATOR_RUN_LABEL,
   adapter: 'real firebase/firestore with rules-unit-testing synthetic authenticated contexts',

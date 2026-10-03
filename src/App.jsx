@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { auth, db } from './firebase';
+import { auth, db, firebaseEnvironment } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, setDoc, collection, query, onSnapshot, getDocs, getDocsFromServer, where, orderBy, limit, deleteDoc, getDoc, writeBatch, updateDoc, serverTimestamp, runTransaction } from 'firebase/firestore';
 import {
@@ -9,7 +9,7 @@ import {
 import LoadingSpinner from './components/LoadingSpinner';
 import EmptyState from './components/EmptyState';
 import { logoutUser, reauthenticateWithGoogle } from './services/authService';
-import { decideAccess, loadOriginalOwnerUid, observeAccessRequest } from './services/accessService';
+import { bootstrapStagingOwnerConfig, decideAccess, loadOriginalOwnerUid, observeAccessRequest } from './services/accessService';
 import { dataViewMode } from './services/dataViewMode';
 import { canClearDraftAfterSubmission, clearDraft, createDraftSession, createSessionId, discoverDraftSubmission, holdDraftEditorLock, loadDraftSession, reconcileDraftSubmission, saveDraftSession, visibleDraft } from './services/draftStorage';
 import { stagedSelfDelete } from './services/accountDeletion';
@@ -1903,7 +1903,11 @@ const App = () => {
                 const ownerCandidate = nextClaims.email === 'ctom40101@gmail.com'
                     && nextClaims.email_verified === true
                     && nextClaims.firebase?.sign_in_provider === 'google.com';
-                const originalOwnerUid = ownerCandidate ? await loadOriginalOwnerUid(db) : null;
+                let originalOwnerUid = ownerCandidate ? await loadOriginalOwnerUid(db) : null;
+                if (ownerCandidate && !originalOwnerUid && firebaseEnvironment.appEnvironment === 'staging') {
+                    originalOwnerUid = await bootstrapStagingOwnerConfig(
+                        db, u, nextClaims, firebaseEnvironment.appEnvironment);
+                }
                 if (!active || auth.currentUser?.uid !== u.uid) return;
                 if (ownerCandidate && originalOwnerUid !== u.uid) {
                     setAccessState('identity_invalid');

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:staging": "vite build --mode staging",
     "lint": "eslint .",
     "test": "node --test test/*.unit.test.mjs",
     "test:rules": "firebase emulators:exec --only firestore --project demo-mygym-security-v1 --config firebase.test.json \"node --test test/firestore.rules.test.mjs\"",
