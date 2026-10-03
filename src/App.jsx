@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { auth, db } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, setDoc, collection, query, onSnapshot, getDocs, orderBy, limit, deleteDoc, getDoc, writeBatch, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, collection, query, onSnapshot, getDocs, getDocsFromServer, where, orderBy, limit, deleteDoc, getDoc, writeBatch, updateDoc, serverTimestamp, runTransaction } from 'firebase/firestore';
 import {
   Dumbbell, Menu, NotebookText, BarChart3, ListChecks, ArrowLeft, RotateCcw, TrendingUp,
   Weight, Calendar, Sparkles, AlertTriangle, Armchair, Plus, Trash2, Edit, Save, X, Scale, ListPlus, ChevronDown, CheckCircle, Info, Wand2, MousePointerClick, Crown, Activity, User, PenSquare, Trophy, Timer, Copy, ShieldCheck, LogIn, LogOut, Loader2, Bug, Smartphone, Mail, Lock, KeyRound, UserX, CheckSquare, Square, FileSpreadsheet, Upload, Download, Undo2, PlayCircle, LineChart, PieChart, History, Eraser, Shield, RefreshCw, GripVertical, Camera, Image as ImageIcon, ChevronUp, Grid
@@ -11,7 +11,7 @@ import EmptyState from './components/EmptyState';
 import { logoutUser, reauthenticateWithGoogle } from './services/authService';
 import { decideAccess, loadOriginalOwnerUid, observeAccessRequest } from './services/accessService';
 import { dataViewMode } from './services/dataViewMode';
-import { clearDraft, loadDraft, saveDraft, visibleDraft } from './services/draftStorage';
+import { canClearDraftAfterSubmission, clearDraft, createDraftSession, createSessionId, discoverDraftSubmission, holdDraftEditorLock, loadDraftSession, reconcileDraftSubmission, saveDraftSession, visibleDraft } from './services/draftStorage';
 import { stagedSelfDelete } from './services/accountDeletion';
 import { hasAdminWorker } from './services/adminWorker';
 import AuthScreen from './components/AuthScreen';
@@ -52,6 +52,15 @@ import { parseCSV } from './utils/csv';
 
 
 
+
+const markPerformance = (name) => {
+    try {
+        if (typeof performance !== 'undefined' && typeof performance.mark === 'function') performance.mark(name);
+    } catch {
+        // Performance instrumentation must never block the product.
+    }
+};
+markPerformance('mgl_js_loaded');
 
 const DEFAULT_EQUIPMENT_SOURCE = '健身房通用';
 
@@ -1244,11 +1253,11 @@ ${bodyPartVolumeText}
     );
 };
 
-const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movementDB, weightHistory, db, userId, APP_ID, setScreen, currentLog, setCurrentLog }) => {
-    const today = new Date().toISOString().substring(0, 10);
-    const [selectedDate, setSelectedDate] = useState(today);
-    // currentLog is now a prop from App
+const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, selectedDate, setSelectedDate, plansDB, movementDB, weightHistory, db, userId, APP_ID, setScreen, currentLog, setCurrentLog, draftSessionId, draftRevision, prepareDraftSubmission, completeDraftSubmission }) => {
+    // currentLog, selected plan and selected date are owned by the resumable UID-scoped draft session.
     const [resetModalState, setResetModalState] = useState({ isOpen: false });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const submittingRef = useRef(false);
     const [addMoveModalOpen, setAddMoveModalOpen] = useState(false);
     const [isBodyMetricsModalOpen, setIsBodyMetricsModalOpen] = useState(false);
 
@@ -1324,14 +1333,20 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
     };
 
     const handleLogSubmit = async () => {
+        if (submittingRef.current) return;
         const active = currentLog.filter(m => m.sets.some(s => s.weight > 0));
         if (active.length === 0) return alert("請至少記錄一組重量");
+        if (!draftSessionId) return alert("尚未建立可恢復的訓練工作階段，請先修改任一訓練欄位後再試一次。");
 
+        const submissionId = draftSessionId;
+        const submissionRevision = draftRevision;
         const sub = {
             date: new Date(selectedDate).getTime(),
             userId,
             menuId: selectedDailyPlanId || 'custom',
-            // Include session photo at the root of the log document
+            submissionId,
+            submissionRevision,
+            // Photo persistence across reload is intentionally outside S1.
             photo: sessionPhoto || null,
             movements: active.map(m => ({
                 ...m,
@@ -1339,13 +1354,40 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
             }))
         };
         const total = sub.movements.reduce((s, m) => s + m.totalVolume, 0);
-        await setDoc(doc(collection(db, `artifacts/${APP_ID}/users/${userId}/LogDB`), `${selectedDate}-${Date.now()}`), { ...sub, overallVolume: total });
+        submittingRef.current = true;
+        setIsSubmitting(true);
+        try {
+            const identity = prepareDraftSubmission(submissionId, submissionRevision);
+            // Freeze nested fields while edits continue; the server transaction
+            // reconciles a lost response and rejects stale/conflicting revisions.
+            const payload = JSON.parse(JSON.stringify({ ...sub, overallVolume: total }));
+            const logCollection = collection(db, `artifacts/${APP_ID}/users/${userId}/LogDB`);
+            const selection = await discoverDraftSubmission(async () => {
+                // A cache-only empty result cannot prove that an older submission
+                // is absent. Query only this UID, using the immutable session ID.
+                const snapshot = await getDocsFromServer(query(logCollection, where('submissionId', '==', submissionId)));
+                return snapshot.docs.map(item => ({ id: item.id, data: item.data() }));
+            }, selectedDate, payload, identity);
+            const reference = doc(logCollection, selection.documentId);
+            await runTransaction(db, transaction =>
+                reconcileDraftSubmission(transaction, reference, payload, selection)
+            );
 
-        setCurrentLog([]); // Clear draft after submit
-        setSessionPhoto(null); // Clear photo
-        setSelectedDailyPlanId(''); // Reset menu selection
-        alert('訓練完成！');
-        setScreen('Analysis'); // Jump to Analysis
+            if (!completeDraftSubmission(submissionId, submissionRevision)) {
+                alert('訓練已儲存，但送出期間內容又有更新；較新的未送出內容已保留。');
+                return;
+            }
+
+            setSessionPhoto(null);
+            alert('訓練完成！');
+            setScreen('Analysis');
+        } catch (error) {
+            console.error('Training submit failed:', error);
+            alert(error.userMessage || '送出失敗或尚未確認成功，內容已保留，請稍後重試。');
+        } finally {
+            submittingRef.current = false;
+            setIsSubmitting(false);
+        }
     };
 
     const executeResetWeight = async (name, weight) => {
@@ -1421,7 +1463,7 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, plansDB, movem
                     </div>
                 )}
 
-                {currentLog.length > 0 && <button onClick={handleLogSubmit} className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg my-4">完成訓練</button>}
+                {currentLog.length > 0 && <button onClick={handleLogSubmit} disabled={isSubmitting} className="w-full bg-indigo-600 disabled:bg-indigo-300 text-white font-bold py-4 rounded-xl shadow-lg my-4">{isSubmitting ? '正在送出…' : '完成訓練'}</button>}
             </div>
         </>
     );
@@ -1606,7 +1648,8 @@ const AdminReadOnlyViewer = ({ user, movementDB, plansDB, logDB, bodyMetricsDB }
 );
 
 const App = () => {
-    const [screen, setScreen] = useState('Profile');
+    useEffect(() => { markPerformance('mgl_app_mounted'); }, []);
+    const [screen, setScreenState] = useState('Profile');
     const [userId, setUserId] = useState(null);
     // Add current user state for admin check
     const [currentUser, setCurrentUser] = useState(null);
@@ -1627,25 +1670,151 @@ const App = () => {
     const [loadedUserId, setLoadedUserId] = useState(null);
     const [dataLoadErrorUid, setDataLoadErrorUid] = useState(null);
 
-    // 初始化為空字串，防止自動選取
-    const [selectedDailyPlanId, setSelectedDailyPlanId] = useState('');
-
-    // Firebase UID owns the browser draft; a legacy unscoped draft has no proven owner.
+    // Firebase UID owns the whole resumable training session.
+    // Do not persist anything until the current UID has been hydrated from storage.
     const [draftState, setDraftState] = useState({ uid: null, log: [] });
+    const [draftHydratedUid, setDraftHydratedUid] = useState(null);
+    const draftStateRef = useRef(draftState);
+    const [draftEditorUid, setDraftEditorUid] = useState(null);
+    const draftEditorUidRef = useRef(null);
+    const [draftStorageError, setDraftStorageError] = useState(false);
     const currentLog = visibleDraft(draftState, userId);
+    const selectedDailyPlanId = draftState.uid === userId ? (draftState.selectedDailyPlanId || '') : '';
+    const selectedDate = draftState.uid === userId && draftState.selectedDate
+        ? draftState.selectedDate
+        : new Date().toISOString().substring(0, 10);
+
+    useEffect(() => {
+        draftStateRef.current = draftState;
+    }, [draftState]);
+
     const setCurrentLog = (next) => {
-        if (!userId) return;
-        setDraftState(previous => ({
-            uid: userId,
-            log: typeof next === 'function' ? next(visibleDraft(previous, userId)) : next,
-        }));
+        if (!userId || draftEditorUidRef.current !== userId) return;
+        setDraftState(previous => {
+            const base = previous.uid === userId ? previous : createDraftSession(userId);
+            const nextLog = typeof next === 'function' ? next(visibleDraft(base, userId)) : next;
+            const updated = {
+                ...base,
+                uid: userId,
+                log: nextLog,
+                selectedDate: nextLog.length
+                    ? (base.selectedDate || new Date().toISOString().substring(0, 10))
+                    : base.selectedDate,
+                lastScreen: nextLog.length ? screen : base.lastScreen,
+                sessionId: nextLog.length ? (base.sessionId || createSessionId()) : null,
+                submissionIdentity: nextLog.length && base.sessionId ? base.submissionIdentity : 'session',
+                revision: (base.revision || 0) + 1,
+            };
+            draftStateRef.current = updated;
+            return updated;
+        });
+    };
+
+    const setSelectedDailyPlanId = (next) => {
+        if (!userId || draftEditorUidRef.current !== userId) return;
+        setDraftState(previous => {
+            const base = previous.uid === userId ? previous : createDraftSession(userId);
+            const value = typeof next === 'function' ? next(base.selectedDailyPlanId || '') : next;
+            const updated = { ...base, uid: userId, selectedDailyPlanId: value || '', revision: (base.revision || 0) + 1 };
+            draftStateRef.current = updated;
+            return updated;
+        });
+    };
+
+    const setSelectedDate = (next) => {
+        if (!userId || draftEditorUidRef.current !== userId) return;
+        setDraftState(previous => {
+            const base = previous.uid === userId ? previous : createDraftSession(userId);
+            const value = typeof next === 'function' ? next(base.selectedDate) : next;
+            const updated = { ...base, uid: userId, selectedDate: value, revision: (base.revision || 0) + 1 };
+            draftStateRef.current = updated;
+            return updated;
+        });
+    };
+
+    const prepareDraftSubmission = (sessionId, revision) => {
+        const current = draftStateRef.current;
+        if (!userId || draftEditorUidRef.current !== userId
+            || !canClearDraftAfterSubmission(current, userId, sessionId, revision)) {
+            throw new Error('Draft changed before submission');
+        }
+        // Persist before the first network attempt, including an unknown outcome.
+        saveDraftSession(localStorage, userId, current);
+        return current.submissionIdentity;
+    };
+
+    const completeDraftSubmission = (sessionId, revision) => {
+        const current = draftStateRef.current;
+        if (!userId || draftEditorUidRef.current !== userId
+            || !canClearDraftAfterSubmission(current, userId, sessionId, revision)) {
+            return false;
+        }
+        const next = createDraftSession(userId, {
+            selectedDate: new Date().toISOString().substring(0, 10),
+            lastScreen: 'Analysis',
+        });
+        clearDraft(localStorage, userId);
+        draftStateRef.current = next;
+        setDraftState(next);
+        return true;
     };
 
     useEffect(() => {
-        if (draftState.uid && ['approved', 'admin', 'legacy'].includes(accessState)) {
-            saveDraft(localStorage, draftState.uid, draftState.log);
+        if (!userId || !['approved', 'admin', 'legacy'].includes(accessState)) return undefined;
+        let active = true;
+        let lease;
+        try {
+            lease = holdDraftEditorLock(navigator.locks, userId, () => {
+                // A queued tab must reread after the prior editor closes.
+                const restored = loadDraftSession(localStorage, userId);
+                if (restored.storageReadFailed) throw new Error('Draft storage could not be read safely');
+                draftStateRef.current = restored;
+                draftEditorUidRef.current = userId;
+                setDraftState(restored);
+                setDraftHydratedUid(userId);
+                setDraftEditorUid(userId);
+                if (restored.log.length) setScreenState('Log');
+                markPerformance('mgl_draft_editor_ready');
+            });
+            lease.done.catch(() => { if (active) setDraftStorageError(true); });
+        } catch {
+            queueMicrotask(() => { if (active) setDraftStorageError(true); });
         }
-    }, [draftState, accessState]);
+        return () => {
+            active = false;
+            draftEditorUidRef.current = null;
+            setDraftEditorUid(null);
+            lease?.release();
+        };
+    }, [userId, accessState]);
+
+    useEffect(() => {
+        if (draftHydratedUid !== userId || draftState.uid !== userId) return;
+        if (draftEditorUid !== userId || draftEditorUidRef.current !== userId) return;
+        if (!['approved', 'admin', 'legacy'].includes(accessState)) return;
+        let active = true;
+        let failed = false;
+        try {
+            if (draftState.sessionId || draftState.log.length) saveDraftSession(localStorage, userId, draftState);
+            else clearDraft(localStorage, userId);
+        } catch {
+            failed = true;
+        }
+        queueMicrotask(() => { if (active) setDraftStorageError(failed); });
+        return () => { active = false; };
+    }, [draftState, draftHydratedUid, draftEditorUid, userId, accessState]);
+
+    const setScreen = (nextScreen) => {
+        setScreenState(nextScreen);
+        const latestDraft = draftStateRef.current;
+        if (!userId || draftEditorUidRef.current !== userId || draftHydratedUid !== userId || visibleDraft(latestDraft, userId).length === 0) return;
+        setDraftState(previous => {
+            if (previous.lastScreen === nextScreen) return previous;
+            const updated = { ...previous, lastScreen: nextScreen, revision: (previous.revision || 0) + 1 };
+            draftStateRef.current = updated;
+            return updated;
+        });
+    };
 
     useEffect(() => {
         if (accessState !== 'legacy') return undefined;
@@ -1670,7 +1839,7 @@ const App = () => {
     const onDeletionStaged = (uid) => {
         clearDraft(localStorage, uid);
         setDraftState({ uid: null, log: [] });
-        setSelectedDailyPlanId('');
+        setDraftHydratedUid(null);
     };
 
     // 移除自動設定第一個菜單的 useEffect
@@ -1691,12 +1860,25 @@ const App = () => {
             setAccessState(u ? 'loading' : 'unauthenticated');
             setSelfDeleteRequested(false);
             setIsAuthReady(true);
+            markPerformance('mgl_auth_resolved');
             setMovementDB([]);
             setPlansDB([]);
             setLogDB([]);
             setBodyMetricsDB([]);
-            setDraftState({ uid: u?.uid || null, log: loadDraft(localStorage, u?.uid) });
-            setSelectedDailyPlanId('');
+            if (u) {
+                const restoredDraft = loadDraftSession(localStorage, u.uid);
+                draftStateRef.current = restoredDraft;
+                markPerformance('mgl_draft_hydrated');
+                setDraftState(restoredDraft);
+                setDraftHydratedUid(u.uid);
+                if (restoredDraft.log.length > 0) setScreenState('Log');
+                else setScreenState('Profile');
+            } else {
+                draftStateRef.current = { uid: null, log: [] };
+                setDraftState({ uid: null, log: [] });
+                setDraftHydratedUid(null);
+                setScreenState('Profile');
+            }
             setLoadedUserId(null);
             setDataLoadErrorUid(null);
             if (!u) return;
@@ -1715,7 +1897,7 @@ const App = () => {
                     if (isLegacyTargetPolicy(nextPolicy, u.uid) && u.email !== 'ctom40101@gmail.com') {
                         setAccessState(legacyProductAccess(u, nextClaims, nextPolicy, null) ? 'legacy' : 'legacy_expired');
                     } else setAccessState('identity_invalid');
-                    setScreen('Profile');
+                    // Keep the screen restored from this UID's draft session.
                     return;
                 }
                 const ownerCandidate = nextClaims.email === 'ctom40101@gmail.com'
@@ -1738,7 +1920,7 @@ const App = () => {
                         setAccessState(decideAccess(u, nextClaims, request, originalOwnerUid));
                     } },
                     () => { if (active) setAccessState('error'); });
-                setScreen('Profile');
+                // Keep the screen restored from this UID's draft session.
             } catch {
                 if (active) setAccessState('error');
             }
@@ -1836,7 +2018,10 @@ const App = () => {
             if (!active) return;
             setter(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
             loaded.add(name);
-            if (loaded.size === 4) setLoadedUserId(effectiveUserId);
+            if (loaded.size === 4) {
+                markPerformance('mgl_data_ready');
+                setLoadedUserId(effectiveUserId);
+            }
         };
         const failed = () => { if (active) setDataLoadErrorUid(effectiveUserId); };
         // 修正路徑：讀取 users/{userId}/MovementDB (私有)
@@ -1848,6 +2033,12 @@ const App = () => {
         const unsub4 = onSnapshot(query(collection(db, getBodyMetricsDBPath(APP_ID, effectiveUserId))), s => received('metrics', setBodyMetricsDB, s), failed);
         return () => { active = false; unsub1(); unsub2(); unsub3(); unsub4(); };
     }, [isAuthReady, accessState, effectiveUserId]);
+
+    useEffect(() => {
+        if (screen === 'Log' && draftHydratedUid === userId && draftEditorUid === userId && loadedUserId === effectiveUserId) {
+            markPerformance('mgl_log_interactive');
+        }
+    }, [screen, draftHydratedUid, draftEditorUid, userId, loadedUserId, effectiveUserId]);
 
     useEffect(() => {
         if (!currentUser || !['approved', 'admin'].includes(accessState)) return;
@@ -1868,13 +2059,18 @@ const App = () => {
     const renderScreen = () => {
         if (isAdmin && adminViewUser) return <AdminReadOnlyViewer user={adminViewUser} movementDB={movementDB} plansDB={plansDB} logDB={logDB} bodyMetricsDB={bodyMetricsDB} />;
         if (screen === 'Admin' && isAdmin) return <ScreenContainer title="🛡️ 管理後台"><AdminScreen db={db} admin={currentUser} setAdminViewUser={setAdminViewUser} /></ScreenContainer>;
+        if (['Log', 'Menu'].includes(screen) && draftEditorUid !== userId) {
+            return <div className="p-10 text-center">{draftStorageError
+                ? '此瀏覽器無法安全保護訓練草稿，請使用支援的瀏覽器再試。'
+                : '正在取得草稿編輯權；若其他分頁正在編輯，請先關閉該分頁。'}</div>;
+        }
 
         switch (screen) {
             case 'Library': return <ScreenContainer title="🏋️ 動作庫"><LibraryScreen weightHistory={weightHistory} movementDB={movementDB} db={db} APP_ID={APP_ID} userId={effectiveUserId} logDB={logDB} plansDB={plansDB} /></ScreenContainer>;
             case 'Menu': return <ScreenContainer title="📋 菜單"><MenuScreen setSelectedDailyPlanId={setSelectedDailyPlanId} selectedDailyPlanId={selectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} db={db} userId={effectiveUserId} APP_ID={APP_ID} setScreen={setScreen} currentLog={currentLog} setCurrentLog={setCurrentLog} /></ScreenContainer>;
             case 'Analysis': return <ScreenContainer title="📈 分析"><AnalysisScreen logDB={logDB} bodyMetricsDB={bodyMetricsDB} movementDB={movementDB} db={db} APP_ID={APP_ID} userId={effectiveUserId} /></ScreenContainer>;
             case 'Profile': return <ScreenContainer title="👤 個人"><ProfileScreen bodyMetricsDB={bodyMetricsDB} userId={userId} db={db} APP_ID={APP_ID} logDB={logDB} auth={auth} isAdmin={isAdmin || accessState === 'legacy'} onDeletionStaged={onDeletionStaged} /></ScreenContainer>;
-            default: return <ScreenContainer title="✍️ 紀錄"><LogScreen selectedDailyPlanId={selectedDailyPlanId} setSelectedDailyPlanId={setSelectedDailyPlanId} plansDB={plansDB} movementDB={movementDB} weightHistory={weightHistory} db={db} userId={effectiveUserId} APP_ID={APP_ID} setScreen={setScreen} currentLog={currentLog} setCurrentLog={setCurrentLog} /></ScreenContainer>;
+            default: return <ScreenContainer title="✍️ 紀錄"><LogScreen selectedDailyPlanId={selectedDailyPlanId} setSelectedDailyPlanId={setSelectedDailyPlanId} selectedDate={selectedDate} setSelectedDate={setSelectedDate} plansDB={plansDB} movementDB={movementDB} weightHistory={weightHistory} db={db} userId={effectiveUserId} APP_ID={APP_ID} setScreen={setScreen} currentLog={currentLog} setCurrentLog={setCurrentLog} draftSessionId={draftState.sessionId} draftRevision={draftState.revision || 0} prepareDraftSubmission={prepareDraftSubmission} completeDraftSubmission={completeDraftSubmission} /></ScreenContainer>;
         }
     };
 
@@ -1896,6 +2092,7 @@ const App = () => {
             )}
 
             <div className="flex-grow overflow-hidden">{renderScreen()}</div>
+            {draftStorageError && draftEditorUid === userId && <div role="alert" className="fixed top-0 w-full bg-amber-100 p-3 text-sm">草稿暫時無法儲存到此瀏覽器；請保留本頁，恢復儲存空間後再試。</div>}
             {/* Pass isAdmin to NavMenu */}
             <NavMenu screen={screen} setScreen={setScreen} isAdmin={isAdmin} />
         </div>
