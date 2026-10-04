@@ -3,6 +3,10 @@ import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/fires
 const OWNER_EMAIL = 'ctom40101@gmail.com';
 const STATUSES = new Set(['pending', 'approved', 'rejected', 'disabled']);
 
+export function isAccessResolutionPending(user, accessState) {
+  return !!user && accessState === 'loading';
+}
+
 export function isVerifiedAdmin(claims, userUid, originalOwnerUid) {
   return claims?.email === OWNER_EMAIL && claims.email_verified === true
     && !!userUid && userUid === originalOwnerUid;

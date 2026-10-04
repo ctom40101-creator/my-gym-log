@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decideAccess, isVerifiedAdmin } from '../src/services/accessService.js';
+import { decideAccess, isAccessResolutionPending, isVerifiedAdmin } from '../src/services/accessService.js';
 
 const member = { uid: 'member-uid' };
 const owner = { uid: 'owner-uid' };
@@ -29,4 +29,11 @@ test('admin requires verified Firebase token email and frozen original UID', () 
   assert.equal(decideAccess({ uid: 'shadow-uid' }, verified, undefined, 'owner-uid'), 'request_needed');
   assert.equal(isVerifiedAdmin({ ...verified, email_verified: false }, owner.uid, 'owner-uid'), false);
   assert.equal(decideAccess(owner, { ...verified, email_verified: false }, undefined, 'owner-uid'), 'identity_invalid');
+});
+
+test('authenticated users stay on access loading UI until authorization resolves', () => {
+  assert.equal(isAccessResolutionPending(owner, 'loading'), true);
+  assert.equal(isAccessResolutionPending(null, 'loading'), false);
+  assert.equal(isAccessResolutionPending(owner, 'admin'), false);
+  assert.equal(isAccessResolutionPending(owner, 'identity_invalid'), false);
 });

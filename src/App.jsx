@@ -9,7 +9,7 @@ import {
 import LoadingSpinner from './components/LoadingSpinner';
 import EmptyState from './components/EmptyState';
 import { logoutUser, reauthenticateWithGoogle } from './services/authService';
-import { bootstrapStagingOwnerConfig, decideAccess, loadOriginalOwnerUid, observeAccessRequest } from './services/accessService';
+import { bootstrapStagingOwnerConfig, decideAccess, isAccessResolutionPending, loadOriginalOwnerUid, observeAccessRequest } from './services/accessService';
 import { dataViewMode } from './services/dataViewMode';
 import { canClearDraftAfterSubmission, clearDraft, createDraftSession, createSessionId, discoverDraftSubmission, holdDraftEditorLock, loadDraftSession, reconcileDraftSubmission, saveDraftSession, visibleDraft } from './services/draftStorage';
 import { stagedSelfDelete } from './services/accountDeletion';
@@ -2053,6 +2053,7 @@ const App = () => {
 
     if (!isAuthReady) return <div className="p-10 text-center">Loading...</div>;
     if (!currentUser) return <AuthScreen />;
+    if (isAccessResolutionPending(currentUser, accessState)) return <div className="p-10 text-center">正在確認登入權限…</div>;
     if (!['approved', 'admin', 'legacy'].includes(accessState)) return <>
         {migrationPolicy && <LegacyMigrationNotice key={signInKey} user={currentUser} claims={claims} policy={migrationPolicy} signInKey={signInKey} onPolicyChange={setMigrationPolicy} />}
         <AccessStatusScreen state={accessState} user={currentUser} claims={claims} db={db} selfDeleteRequested={selfDeleteRequested} />
