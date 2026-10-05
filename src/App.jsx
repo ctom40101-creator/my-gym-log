@@ -1356,37 +1356,49 @@ const LogScreen = ({ selectedDailyPlanId, setSelectedDailyPlanId, selectedDate, 
         const total = sub.movements.reduce((s, m) => s + m.totalVolume, 0);
         submittingRef.current = true;
         setIsSubmitting(true);
+        markPerformance('mgl_submit_started');
         try {
             const identity = prepareDraftSubmission(submissionId, submissionRevision);
             // Freeze nested fields while edits continue; the server transaction
             // reconciles a lost response and rejects stale/conflicting revisions.
             const payload = JSON.parse(JSON.stringify({ ...sub, overallVolume: total }));
+            markPerformance('mgl_submit_draft_persisted');
             const logCollection = collection(db, `artifacts/${APP_ID}/users/${userId}/LogDB`);
+            markPerformance('mgl_submit_lookup_started');
             const selection = await discoverDraftSubmission(async () => {
                 // A cache-only empty result cannot prove that an older submission
                 // is absent. Query only this UID, using the immutable session ID.
                 const snapshot = await getDocsFromServer(query(logCollection, where('submissionId', '==', submissionId)));
                 return snapshot.docs.map(item => ({ id: item.id, data: item.data() }));
             }, selectedDate, payload, identity);
+            markPerformance('mgl_submit_lookup_settled');
             const reference = doc(logCollection, selection.documentId);
+            markPerformance('mgl_submit_transaction_started');
             await runTransaction(db, transaction =>
                 reconcileDraftSubmission(transaction, reference, payload, selection)
             );
+            markPerformance('mgl_submit_confirmed');
 
+            markPerformance('mgl_submit_completion_started');
             if (!completeDraftSubmission(submissionId, submissionRevision)) {
                 alert('訓練已儲存，但送出期間內容又有更新；較新的未送出內容已保留。');
                 return;
             }
+            markPerformance('mgl_submit_draft_cleared');
 
             setSessionPhoto(null);
+            markPerformance('mgl_submit_feedback_started');
             alert('訓練完成！');
+            markPerformance('mgl_submit_feedback_settled');
             setScreen('Analysis');
         } catch (error) {
+            markPerformance('mgl_submit_unconfirmed');
             console.error('Training submit failed:', error);
             alert(error.userMessage || '送出失敗或尚未確認成功，內容已保留，請稍後重試。');
         } finally {
             submittingRef.current = false;
             setIsSubmitting(false);
+            markPerformance('mgl_submit_finished');
         }
     };
 
@@ -1883,12 +1895,21 @@ const App = () => {
             setDataLoadErrorUid(null);
             if (!u) return;
             try {
+                markPerformance('mgl_auth_token_started');
                 const token = await u.getIdTokenResult();
+                markPerformance('mgl_auth_token_settled');
                 if (!active || auth.currentUser?.uid !== u.uid) return;
                 const nextClaims = token.claims;
                 setClaims(nextClaims);
+                const ownerCandidate = nextClaims.email === 'ctom40101@gmail.com'
+                    && nextClaims.email_verified === true
+                    && nextClaims.firebase?.sign_in_provider === 'google.com';
                 let nextPolicy = null;
-                try { nextPolicy = await readLegacyPolicy(u.uid); } catch { /* non-target users have no policy read */ }
+                if (!ownerCandidate || u.email !== 'ctom40101@gmail.com') {
+                    markPerformance('mgl_auth_policy_started');
+                    try { nextPolicy = await readLegacyPolicy(u.uid); } catch { /* non-target users have no policy read */ }
+                    markPerformance('mgl_auth_policy_settled');
+                }
                 if (!active || auth.currentUser?.uid !== u.uid) return;
                 if (isLegacyTargetPolicy(nextPolicy, u.uid) && u.email !== 'ctom40101@gmail.com') {
                     setMigrationPolicy(nextPolicy);
@@ -1897,13 +1918,13 @@ const App = () => {
                     if (isLegacyTargetPolicy(nextPolicy, u.uid) && u.email !== 'ctom40101@gmail.com') {
                         setAccessState(legacyProductAccess(u, nextClaims, nextPolicy, null) ? 'legacy' : 'legacy_expired');
                     } else setAccessState('identity_invalid');
+                    markPerformance('mgl_auth_access_resolved');
                     // Keep the screen restored from this UID's draft session.
                     return;
                 }
-                const ownerCandidate = nextClaims.email === 'ctom40101@gmail.com'
-                    && nextClaims.email_verified === true
-                    && nextClaims.firebase?.sign_in_provider === 'google.com';
+                if (ownerCandidate) markPerformance('mgl_auth_owner_started');
                 let originalOwnerUid = ownerCandidate ? await loadOriginalOwnerUid(db) : null;
+                if (ownerCandidate) markPerformance('mgl_auth_owner_settled');
                 if (ownerCandidate && !originalOwnerUid && firebaseEnvironment.appEnvironment === 'staging') {
                     originalOwnerUid = await bootstrapStagingOwnerConfig(
                         db, u, nextClaims, firebaseEnvironment.appEnvironment);
@@ -1911,21 +1932,26 @@ const App = () => {
                 if (!active || auth.currentUser?.uid !== u.uid) return;
                 if (ownerCandidate && originalOwnerUid !== u.uid) {
                     setAccessState('identity_invalid');
+                    markPerformance('mgl_auth_access_resolved');
                     return;
                 }
                 const first = decideAccess(u, nextClaims, null, originalOwnerUid);
                 if (first === 'admin' || first === 'identity_invalid') {
                     setAccessState(first);
+                    markPerformance('mgl_auth_access_resolved');
                     return;
                 }
+                markPerformance('mgl_auth_request_started');
                 unsubscribeRequest = observeAccessRequest(db, u,
                     request => { if (active) {
                         setSelfDeleteRequested(!!request?.selfDeleteRequestedAt);
                         setAccessState(decideAccess(u, nextClaims, request, originalOwnerUid));
+                        markPerformance('mgl_auth_access_resolved');
                     } },
                     () => { if (active) setAccessState('error'); });
                 // Keep the screen restored from this UID's draft session.
             } catch {
+                markPerformance('mgl_auth_failed');
                 if (active) setAccessState('error');
             }
         });
@@ -1936,6 +1962,7 @@ const App = () => {
     // 計算歷史紀錄與 AI 建議重量 (修正版：實作漸進式負荷邏輯 + 修正重置邏輯)
     const weightHistory = useMemo(() => {
         if (logDB.length === 0) return {};
+        markPerformance('mgl_history_processing_started');
         const historyMap = {};
         movementDB.forEach(move => {
             // 找出該動作的所有紀錄 (包含標準訓練紀錄 AND 重置紀錄)
@@ -2011,15 +2038,18 @@ const App = () => {
                 suggestion: calculatedSuggestion
             };
         });
+        markPerformance('mgl_history_processing_settled');
         return historyMap;
     }, [logDB, movementDB]);
 
     useEffect(() => {
         if (!isAuthReady || !['approved', 'admin', 'legacy'].includes(accessState) || !effectiveUserId || !db) return;
+        markPerformance('mgl_data_subscriptions_started');
         let active = true;
         const loaded = new Set();
         const received = (name, setter, snapshot) => {
             if (!active) return;
+            markPerformance(`mgl_data_${name}_received`);
             setter(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
             loaded.add(name);
             if (loaded.size === 4) {
