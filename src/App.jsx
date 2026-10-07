@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { auth, db, firebaseEnvironment } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, setDoc, collection, query, onSnapshot, getDocs, getDocsFromServer, where, orderBy, limit, deleteDoc, getDoc, writeBatch, updateDoc, serverTimestamp, runTransaction } from 'firebase/firestore';
@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import LoadingSpinner from './components/LoadingSpinner';
 import EmptyState from './components/EmptyState';
-import { logoutUser, reauthenticateWithGoogle } from './services/authService';
+import { getGoogleRedirectSnapshot, initializeGoogleRedirect, logoutUser, reauthenticateWithGoogle, subscribeGoogleRedirect } from './services/authService';
 import { bootstrapStagingOwnerConfig, decideAccess, isAccessResolutionPending, loadOriginalOwnerUid, observeAccessRequest } from './services/accessService';
 import { dataViewMode } from './services/dataViewMode';
 import { canClearDraftAfterSubmission, clearDraft, createDraftSession, createSessionId, discoverDraftSubmission, holdDraftEditorLock, loadDraftSession, reconcileDraftSubmission, saveDraftSession, visibleDraft } from './services/draftStorage';
@@ -1661,6 +1661,8 @@ const AdminReadOnlyViewer = ({ user, movementDB, plansDB, logDB, bodyMetricsDB }
 
 const App = () => {
     useEffect(() => { markPerformance('mgl_app_mounted'); }, []);
+    const googleRedirectState = useSyncExternalStore(subscribeGoogleRedirect, getGoogleRedirectSnapshot, getGoogleRedirectSnapshot);
+    useEffect(() => { void initializeGoogleRedirect(); }, []);
     const [screen, setScreenState] = useState('Profile');
     const [userId, setUserId] = useState(null);
     // Add current user state for admin check
@@ -2081,8 +2083,9 @@ const App = () => {
         });
     }, [currentUser, accessState]);
 
+    if (googleRedirectState.phase !== 'ready') return <AuthScreen googleRedirectState={googleRedirectState} />;
     if (!isAuthReady) return <div className="p-10 text-center">Loading...</div>;
-    if (!currentUser) return <AuthScreen />;
+    if (!currentUser) return <AuthScreen googleRedirectState={googleRedirectState} />;
     if (isAccessResolutionPending(currentUser, accessState)) return <div className="p-10 text-center">正在確認登入權限…</div>;
     if (!['approved', 'admin', 'legacy'].includes(accessState)) return <>
         {migrationPolicy && <LegacyMigrationNotice key={signInKey} user={currentUser} claims={claims} policy={migrationPolicy} signInKey={signInKey} onPolicyChange={setMigrationPolicy} />}

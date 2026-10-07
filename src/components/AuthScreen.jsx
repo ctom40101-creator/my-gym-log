@@ -1,14 +1,21 @@
 import { useState } from 'react';
 import { Dumbbell, Loader2 } from 'lucide-react';
-import { loginWithGoogle } from '../services/authService';
+import { loginWithGoogle, reloadGoogleRedirect } from '../services/authService';
 import { loginWithLegacyPassword, sendMigrationReset } from '../services/legacyMigrationClient';
 
-export default function AuthScreen() {
+export default function AuthScreen({ googleRedirectState = { phase: 'ready', errorCode: null, reloadRequired: false } }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [legacyOpen, setLegacyOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const redirectBusy = googleRedirectState.phase === 'recovering' || googleRedirectState.phase === 'redirecting';
+  const needsReload = googleRedirectState.reloadRequired;
+  const recoveryConflict = googleRedirectState.errorCode === 'auth/account-exists-with-different-credential'
+    || googleRedirectState.errorCode === 'auth/credential-already-in-use';
+  const displayMessage = message || (recoveryConflict
+    ? '偵測到既有帳號與 Google 登入身分衝突。為保護原有 UID 與資料，請停止操作並聯絡管理員。'
+    : googleRedirectState.errorCode ? 'Google 登入未完成，請稍後重試。' : '');
 
   const login = async () => {
     setLoading(true);
@@ -52,12 +59,13 @@ export default function AuthScreen() {
         <Dumbbell className="w-12 h-12 text-indigo-600 mx-auto mb-4" />
         <h1 className="text-3xl font-extrabold text-gray-900">My Gym Log</h1>
         <p className="text-sm text-gray-500 mt-3 mb-6">使用 Google 帳號登入。首次登入後請提交使用申請。</p>
-        <button onClick={login} disabled={loading} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl disabled:opacity-60 flex items-center justify-center">
-          {loading && <Loader2 className="w-5 h-5 mr-2 animate-spin" />}
-          使用 Google 登入
+        {redirectBusy && <p role="status" className="mb-4 text-sm text-gray-600">{googleRedirectState.phase === 'recovering' ? '正在確認 Google 登入結果…' : '正在開啟 Google 登入…'}</p>}
+        <button onClick={needsReload ? reloadGoogleRedirect : login} disabled={redirectBusy || (!needsReload && loading)} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl disabled:opacity-60 flex items-center justify-center">
+          {!needsReload && (loading || redirectBusy) && <Loader2 className="w-5 h-5 mr-2 animate-spin" />}
+          {needsReload ? '重新載入並重試' : '使用 Google 登入'}
         </button>
-        {message && <p role="alert" className="mt-4 text-sm text-red-700">{message}</p>}
-        <div className="mt-6 border-t pt-4 text-left">
+        {displayMessage && <p role="alert" className="mt-4 text-sm text-red-700">{displayMessage}</p>}
+        {!redirectBusy && !needsReload && <div className="mt-6 border-t pt-4 text-left">
           <button type="button" onClick={() => setLegacyOpen(value => !value)} className="text-sm font-semibold text-indigo-700 underline">
             既有 Email/Password 帳號遷移
           </button>
@@ -68,7 +76,7 @@ export default function AuthScreen() {
             <button type="submit" disabled={loading} className="w-full rounded-lg bg-gray-800 py-2 text-white disabled:opacity-60">以原帳號登入</button>
             <button type="button" disabled={loading || !email.trim()} onClick={resetLegacy} className="text-sm text-indigo-700 underline disabled:opacity-50">忘記密碼／寄送重設 Email</button>
           </form>}
-        </div>
+        </div>}
       </div>
     </div>
   );
